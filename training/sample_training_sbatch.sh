@@ -10,5 +10,6 @@
 #SBATCH --cpus-per-task=4                #optional: number of cpus, default is 1
 #SBATCH --mem=32GB                        #optional: amount of memory, default is 4GB
 #SBATCH --gpus=1                         #Necessary to fix CUDA error 
+#SBATCH --constraint=gpu-40gb
 
 python training.py --path_for_training_data /projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/datasets/pdb_2021aug02_sample --path_for_outputs /projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/outputs
