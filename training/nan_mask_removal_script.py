@@ -42,4 +42,4 @@ print("Specific NaN Values:")
 for idx in nan_indices:
     print(f"Index: {idx}, Value: {xyz_tensor[tuple(idx)]}")
 
-# Bash Command: /projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/nan_mask_removal_script.py /projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/datasets/pdb_2021aug02_sample/pdb/l3/1l3a_A.pt
+# Ex. Bash Command: /projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/nan_mask_removal_script.py /projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/datasets/pdb_2021aug02_sample/pdb/l3/1l3a_A.pt
