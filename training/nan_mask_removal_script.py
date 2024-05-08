@@ -3,7 +3,7 @@
 ###################
 # Script Overview #
 ###################
-# This is a custom script to view the contents of the .pt tensors to understand how to flip the xyz coordinates.
+# This is a custom script to view contents of 'xyz' dictionaries within the .pt tensors by removing the nan mask. 
 
 ###########
 # Modules #
