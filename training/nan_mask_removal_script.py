@@ -11,8 +11,6 @@
 import argparse
 import torch
 
-# data = torch.load('/projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/mirrored_coordinate_output/sample_mirrored_coordinate_output/mirrored_1l3a_A.pt')
-
 ############
 # Argparse #
 ############
@@ -27,16 +25,12 @@ input_file = args.input_file
 ########
 # Main #
 ########
-
 data = torch.load(input_file)
 
 # Process the loaded data
 if isinstance(data, dict):
     for key, value in data.items():
         print(f"Key: {key}, Value: {value}")
-
-# Print 'xyz' tensor
-print(data['xyz'])
 
 # Find NaN values in 'xyz' tensor
 xyz_tensor = data['xyz']
@@ -48,5 +42,4 @@ print("Specific NaN Values:")
 for idx in nan_indices:
     print(f"Index: {idx}, Value: {xyz_tensor[tuple(idx)]}")
 
-# Bash Command:
-# /projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/tensor_viewing_script.py /projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/datasets/pdb_2021aug02_sample/pdb/l3/1l3a_A.pt
+# Bash Command: /projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/nan_mask_removal_script.py /projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/datasets/pdb_2021aug02_sample/pdb/l3/1l3a_A.pt
