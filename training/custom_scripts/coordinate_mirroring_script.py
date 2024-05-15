@@ -16,14 +16,33 @@ import numpy as np
 
 # Define input and output directories
 input_directory = '/projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/datasets/pdb_2021aug02_sample/pdb/l3'
-output_directory = '/projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/mirrored_coordinate_output/sample_mirrored_coordinate_output'
+output_directory = '/projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/sample_mirrored_dataset'
 
 #############
 # Functions #
 #############
+# # Reverse the order of the coordinates along the specified axis
+# def mirror_xyz(xyz):
+#     mirrored_xyz = xyz[:, :, ::-1].copy()
+#     return mirrored_xyz
+
+# # Mirror the x-coordinate by changing its sign
+# def mirror_xyz(xyz):
+#     mirrored_xyz = xyz.copy()
+#     mirrored_xyz[:, :, 0] *= -1
+#     return mirrored_xyz
+
+# # Mirror the x-coordinate by changing its sign
+# def mirror_xyz(xyz):
+#     # Creates a copy of 'xyz' and assigns it to a new variable.
+#     mirrored_xyz = xyz.copy()
+#     # Selects all rows and columns of the array, but only multiplies the x-coordinate by -1.
+#     mirrored_xyz[:, :, 0] = -mirrored_xyz[:, :, 0]
+#     return mirrored_xyz
+
 def mirror_xyz(xyz):
-    # Reverse the order of the coordinates along the specified axis
-    mirrored_xyz = xyz[:, :, ::-1].copy()
+    # Negate all coordinates
+    mirrored_xyz = -1 * xyz
     return mirrored_xyz
 
 # Test cases
@@ -115,7 +134,8 @@ for filename in os.listdir(input_directory):
             data['xyz'] = torch.tensor(mirrored_xyz)
             
             # Output the modified data to a new .pt file in the output directory and prepends "mirrored_" to the og filename.
-            output_filename = os.path.join(output_directory, "mirrored_" + filename)  # Change output filename
+            # output_filename = os.path.join(output_directory, "mirrored_" + filename)  # Change output filename
+            output_filename = os.path.join(output_directory, filename)
             
             # Saves the modified data dictionary to a new '.pt' file in the output directory.
             torch.save(data, output_filename)
