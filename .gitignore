@@ -1,3 +1,7 @@
+training/datasets/
+training/sample_mirrored_dataset/
+training/vanilla_sample_training_output/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
