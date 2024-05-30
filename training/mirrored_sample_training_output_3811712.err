@@ -1,8 +1,0 @@
-Traceback (most recent call last):
-  File "/gpfs/projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/training.py", line 251, in <module>
-    main(args)   
-    ^^^^^^^^^^
-  File "/gpfs/projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/training.py", line 187, in main
-    train_loss = train_sum / train_weights
-                 ~~~~~~~~~~^~~~~~~~~~~~~~~
-ZeroDivisionError: float division by zero
