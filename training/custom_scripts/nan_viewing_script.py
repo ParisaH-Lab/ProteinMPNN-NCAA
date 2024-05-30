@@ -59,5 +59,7 @@ tensor = tensor_reshaped.reshape(tensor_reshaped.shape[0], *shape[1:])
 print("Reshaped Tensor:")
 print(tensor)
 
-# Ex. Bash Command: /projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/nan_removal_script.py /projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/datasets/pdb_2021aug02_sample/pdb/l3/1l3a_A.pt
-# Ex. Bash Command: /projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/nan_removal_script.py /projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/sample_mirrored_dataset/mirrored_1l3a_A.pt
+# Ex. Bash Command: /projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/nan_viewing_script.py /projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/datasets/pdb_2021aug02_sample/pdb/l3/1l3a_A.pt
+# Ex. Bash Command: /projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/nan_viewing_script.py /projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/sample_mirrored_dataset/mirrored_1l3a_A.pt
+
+# Ex. Bash Command: /projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/nan_viewing_script.py /projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/mirrored_pdb_2021aug02/pdb/00/200l_A.pt
