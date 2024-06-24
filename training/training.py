@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import argparse
 import os.path
 
@@ -143,6 +145,8 @@ def main(args):
                 if args.mixed_precision:
                     with torch.cuda.amp.autocast():
                         log_probs = model(X, S, mask, chain_M, residue_idx, chain_encoding_all)
+                        print("Log probabilities shape:", log_probs.shape)  # Print shape of log_probs
+                        print("Log probabilities sample:", log_probs[0])  # Print a sample of log_probs
                         _, loss_av_smoothed = loss_smoothed(S, log_probs, mask_for_loss)
            
                     scaler.scale(loss_av_smoothed).backward()
@@ -227,7 +231,7 @@ def main(args):
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    argparser.add_argument("--path_for_training_data", type=str, default="my_path/pdb_2021aug02", help="path for loading training data") 
+    argparser.add_argument("--path_for_training_data", type=str, default="/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/pdb_2021aug02_sample", help="path for loading training data") 
     argparser.add_argument("--path_for_outputs", type=str, default="./exp_020", help="path for logs and model weights")
     argparser.add_argument("--previous_checkpoint", type=str, default="", help="path for previous model weights, e.g. file.pt")
     argparser.add_argument("--num_epochs", type=int, default=200, help="number of epochs to train for")

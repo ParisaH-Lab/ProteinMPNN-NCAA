@@ -40,6 +40,6 @@ if 'xyz' in data:
 else:
     print("Key 'xyz' not found in the loaded data.")
 
-# Ex. Bash Command: /projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/tensor_viewing_script.py /projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/datasets/pdb_2021aug02_sample/pdb/l3/1l3a_A.pt
+# Ex. Bash Command: /projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/tensor_viewing_script.py /projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/pdb_2021aug02_sample/pdb/l3/1l3a_A.pt
 
 # Ex. Bash Command: /projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/tensor_viewing_script.py /projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/mirrored_coordinate_output/sample_mirrored_coordinate_output/mirrored_1l3a_A.pt
