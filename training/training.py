@@ -2,25 +2,37 @@
 
 import argparse
 import os.path
+import json, time, os, sys, glob
+import shutil
+import warnings
+import numpy as np
+import torch
+from torch import optim
+from torch.utils.data import DataLoader
+import queue
+import copy
+import torch.nn as nn
+import torch.nn.functional as F
+import random
+import os.path
+import subprocess
+from concurrent.futures import ProcessPoolExecutor    
+from utils import worker_init_fn, get_pdbs, loader_pdb, build_training_clusters, PDB_dataset, StructureDataset, StructureLoader
+from model_utils import featurize, loss_smoothed, loss_nll, get_std_opt, ProteinMPNN
+
+class ProteinMPNN(nn.Module):
+    def __init__(self, node_features, edge_features, hidden_dim, num_encoder_layers, num_decoder_layers, k_neighbors, dropout, augment_eps):
+        super(ProteinMPNN, self).__init__()
+        self.node_features = node_features
+        self.edge_features = edge_features
+        self.hidden_dim = hidden_dim
+        self.num_encoder_layers = num_encoder_layers
+        self.num_decoder_layers = num_decoder_layers
+        self.k_neighbors = k_neighbors
+        self.dropout = dropout
+        self.augment_eps = augment_eps
 
 def main(args):
-    import json, time, os, sys, glob
-    import shutil
-    import warnings
-    import numpy as np
-    import torch
-    from torch import optim
-    from torch.utils.data import DataLoader
-    import queue
-    import copy
-    import torch.nn as nn
-    import torch.nn.functional as F
-    import random
-    import os.path
-    import subprocess
-    from concurrent.futures import ProcessPoolExecutor    
-    from utils import worker_init_fn, get_pdbs, loader_pdb, build_training_clusters, PDB_dataset, StructureDataset, StructureLoader
-    from model_utils import featurize, loss_smoothed, loss_nll, get_std_opt, ProteinMPNN
 
     scaler = torch.cuda.amp.GradScaler()
      

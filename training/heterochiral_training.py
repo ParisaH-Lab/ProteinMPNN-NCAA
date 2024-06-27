@@ -1,31 +1,32 @@
 #!/usr/bin/env python
 
+###########
+# IMPORTS #
+###########
+
 import argparse
-import os.path
+import os
+import time
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import numpy as np
+import queue
+from concurrent.futures import ProcessPoolExecutor
+from torch.utils.data import DataLoader
+from torch.cuda.amp import GradScaler, autocast
+from utils import worker_init_fn, get_pdbs, loader_pdb, build_training_clusters, PDB_dataset, StructureDataset, StructureLoader
+from model_utils import featurize, loss_smoothed, loss_nll, get_std_opt, ProteinMPNN
+from chiral_determine_module import ChiralDetermine
+
+########
+# MAIN #
+########
 
 def main(args):
-    import json, time, os, sys, glob
-    import shutil
-    import warnings
-    import numpy as np
-    import torch
-    from torch import optim
-    from torch.utils.data import DataLoader
-    import queue
-    import copy
-    import torch.nn as nn
-    import torch.nn.functional as F
-    import random
-    import os.path
-    import subprocess
-    from concurrent.futures import ProcessPoolExecutor    
-    from utils import worker_init_fn, get_pdbs, loader_pdb, build_training_clusters, PDB_dataset, StructureDataset, StructureLoader
-    from model_utils import featurize, loss_smoothed, loss_nll, get_std_opt, ProteinMPNN
-
-    scaler = torch.cuda.amp.GradScaler()
-     
+# Device setup     
     device = torch.device("cuda:0" if (torch.cuda.is_available()) else "cpu")
-
+    scaler = torch.cuda.amp.GradScaler()
     base_folder = time.strftime(args.path_for_outputs, time.localtime())
 
     if base_folder[-1] != '/':
@@ -38,7 +39,6 @@ def main(args):
             os.makedirs(base_folder + subfolder)
 
     PATH = args.previous_checkpoint
-
     logfile = base_folder + 'log.txt'
     if not PATH:
         with open(logfile, 'w') as f:
@@ -55,52 +55,45 @@ def main(args):
         "HOMO"    : 0.70 #min seq.id. to detect homo chains
     }
 
-
     LOAD_PARAM = {'batch_size': 1,
                   'shuffle': True,
                   'pin_memory':False,
                   'num_workers': 4}
 
-   
     if args.debug:
         args.num_examples_per_epoch = 50
         args.max_protein_length = 1000
         args.batch_size = 1000
 
     train, valid, test = build_training_clusters(params, args.debug)
-     
     train_set = PDB_dataset(list(train.keys()), loader_pdb, train, params)
     train_loader = torch.utils.data.DataLoader(train_set, worker_init_fn=worker_init_fn, **LOAD_PARAM)
     valid_set = PDB_dataset(list(valid.keys()), loader_pdb, valid, params)
     valid_loader = torch.utils.data.DataLoader(valid_set, worker_init_fn=worker_init_fn, **LOAD_PARAM)
 
-
-    model = ProteinMPNN(node_features=args.hidden_dim, 
-                        edge_features=args.hidden_dim, 
-                        hidden_dim=args.hidden_dim, 
-                        num_encoder_layers=args.num_encoder_layers, 
-                        num_decoder_layers=args.num_encoder_layers, 
-                        k_neighbors=args.num_neighbors, 
-                        dropout=args.dropout, 
-                        augment_eps=args.backbone_noise)
+    model = NewCombo(node_features=args.hidden_dim, 
+                    edge_features=args.hidden_dim, 
+                    hidden_dim=args.hidden_dim, 
+                    num_encoder_layers=args.num_encoder_layers, 
+                    num_decoder_layers=args.num_encoder_layers, 
+                    k_neighbors=args.num_neighbors, 
+                    dropout=args.dropout, 
+                    augment_eps=args.backbone_noise,
+                    in = 42,
+                    out = 2)
     model.to(device)
-
 
     if PATH:
         checkpoint = torch.load(PATH)
         total_step = checkpoint['step'] #write total_step from the checkpoint
         epoch = checkpoint['epoch'] #write epoch from the checkpoint
         model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     else:
         total_step = 0
         epoch = 0
 
     optimizer = get_std_opt(model.parameters(), args.hidden_dim, total_step)
-
-
-    if PATH:
-        optimizer.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-
 
     with ProcessPoolExecutor(max_workers=12) as executor:
         q = queue.Queue(maxsize=3)
@@ -122,6 +115,7 @@ def main(args):
             t0 = time.time()
             e = epoch + e
             model.train()
+            chiral_model.train()
             train_sum, train_weights = 0., 0.
             train_acc = 0.
             if e % args.reload_data_every_n_epochs == 0:
@@ -145,8 +139,6 @@ def main(args):
                 if args.mixed_precision:
                     with torch.cuda.amp.autocast():
                         log_probs = model(X, S, mask, chain_M, residue_idx, chain_encoding_all)
-                        print("Log probabilities shape:", log_probs.shape)  # Print shape of log_probs
-                        print("Log probabilities sample:", log_probs[0])  # Print a sample of log_probs
                         _, loss_av_smoothed = loss_smoothed(S, log_probs, mask_for_loss)
            
                     scaler.scale(loss_av_smoothed).backward()
@@ -232,6 +224,7 @@ if __name__ == "__main__":
     argparser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     argparser.add_argument("--path_for_training_data", type=str, default="/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/pdb_2021aug02_sample", help="path for loading training data") 
+    argparser.add_argument("--path_for_mirrored_training_data", type=str, default="/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/pdb_2021aug02_sample", help="path for loading training data")
     argparser.add_argument("--path_for_outputs", type=str, default="./exp_020", help="path for logs and model weights")
     argparser.add_argument("--previous_checkpoint", type=str, default="", help="path for previous model weights, e.g. file.pt")
     argparser.add_argument("--num_epochs", type=int, default=200, help="number of epochs to train for")
