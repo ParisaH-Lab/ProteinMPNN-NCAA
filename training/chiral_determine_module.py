@@ -14,3 +14,16 @@ class ChiralDetermine(nn.Module):
         combined_out = self.lin1_combined(combined_tensor)
         output = self.sigmoid(combined_out)
         return output
+
+# if __name__ == "__main__":
+#     # Example usage
+#     input_size = 21
+#     out1 = 2
+#     vanilla_tensor = torch.randn(15, 574, input_size)
+#     dchiral_tensor = torch.randn(15, 574, input_size)
+    
+#     model = ChiralDetermine(input_size, out1)
+#     output = model(vanilla_tensor, dchiral_tensor)
+    
+#     print("Output shape:", output.shape)
+#     print("Output example:", output[0])

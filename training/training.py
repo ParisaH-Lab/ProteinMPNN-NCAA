@@ -19,18 +19,8 @@ import subprocess
 from concurrent.futures import ProcessPoolExecutor    
 from utils import worker_init_fn, get_pdbs, loader_pdb, build_training_clusters, PDB_dataset, StructureDataset, StructureLoader
 from model_utils import featurize, loss_smoothed, loss_nll, get_std_opt, ProteinMPNN
-
-class ProteinMPNN(nn.Module):
-    def __init__(self, node_features, edge_features, hidden_dim, num_encoder_layers, num_decoder_layers, k_neighbors, dropout, augment_eps):
-        super(ProteinMPNN, self).__init__()
-        self.node_features = node_features
-        self.edge_features = edge_features
-        self.hidden_dim = hidden_dim
-        self.num_encoder_layers = num_encoder_layers
-        self.num_decoder_layers = num_decoder_layers
-        self.k_neighbors = k_neighbors
-        self.dropout = dropout
-        self.augment_eps = augment_eps
+from chiral_determine_module import ChiralDetermine
+from new_combo_module import NewComboChiral
 
 def main(args):
 
@@ -87,16 +77,19 @@ def main(args):
     valid_loader = torch.utils.data.DataLoader(valid_set, worker_init_fn=worker_init_fn, **LOAD_PARAM)
 
 
-    model = ProteinMPNN(node_features=args.hidden_dim, 
-                        edge_features=args.hidden_dim, 
+    model = NewComboChiral(edge_features=args.hidden_dim, 
                         hidden_dim=args.hidden_dim, 
                         num_encoder_layers=args.num_encoder_layers, 
                         num_decoder_layers=args.num_encoder_layers, 
                         k_neighbors=args.num_neighbors, 
                         dropout=args.dropout, 
-                        augment_eps=args.backbone_noise)
+                        augment_eps=args.backbone_noise,
+                        input_size=args.hidden_dim, 
+                        out1=2)  # Adjust the out1 parameter as needed
+    
+    chiral_model = ChiralDetermine(input_size=args.hidden_dim, out1=2)  # Initialize ChiralDetermine
     model.to(device)
-
+    chiral_model.to(device)
 
     if PATH:
         checkpoint = torch.load(PATH)
@@ -150,6 +143,7 @@ def main(args):
             for _, batch in enumerate(loader_train):
                 start_batch = time.time()
                 X, S, mask, lengths, chain_M, residue_idx, mask_self, chain_encoding_all = featurize(batch, device)
+                print("Shape of X:", X.shape)  # Print shape of X
                 elapsed_featurize = time.time() - start_batch
                 optimizer.zero_grad()
                 mask_for_loss = mask*chain_M
