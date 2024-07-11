@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 from chiral_determine_module import ChiralDetermine
-from training import ProteinMPNN
+from model_utils import ProteinMPNN
 
 class NewComboChiral(nn.Module):
     def __init__(self, 
@@ -40,28 +40,26 @@ class NewComboChiral(nn.Module):
         self.chiraldetermine = ChiralDetermine(input_size=input_size,
                                                out1=out1)
 
+        # Load pretrained weights
         vanilla_train_weights = torch.load("/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/vanilla_sample_training_output/model_weights/epoch200_step564.pt", map_location=torch.device('cpu'))
-        # print(vanilla_train_weights.keys())
         self.vanilla.load_state_dict(vanilla_train_weights["model_state_dict"])
 
         dchiral_train_weights = torch.load("/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/mirrored_sample_training_output/model_weights/epoch200_step606.pt", map_location=torch.device('cpu'))
-        # print(dchiral_train_weights.keys())
         self.dchiral.load_state_dict(dchiral_train_weights["model_state_dict"])
 
-        self.vanilla.train(False)
-        self.dchiral.train(False)
+        # Set models to evaluation mode
+        self.vanilla.eval()
+        self.dchiral.eval()
 
-    def forward(self, x):
-        vanilla_out = self.vanilla(x)
-        dchiral_out = self.dchiral(x)
-
+    def forward(self, X, S, mask, chain_M, residue_idx, chain_encoding_all):
+        vanilla_out = self.vanilla(X, S, mask, chain_M, residue_idx, chain_encoding_all)
+        dchiral_out = self.dchiral(X, S, mask, chain_M, residue_idx, chain_encoding_all)  # Pass all required arguments
         new_combo = self.chiraldetermine(vanilla_out, dchiral_out)
-        
         return new_combo
 
 if __name__ == "__main__":
     # Example usage within the main block
-    edge_features = 64
+    edge_features = 128
     hidden_dim = 128
     num_encoder_layers = 3
     num_decoder_layers = 3
@@ -82,11 +80,15 @@ if __name__ == "__main__":
                            input_size=input_size,
                            out1=out1)
 
-    # Prepare your input data 'x'
-    x = torch.randn(1, input_size)  # Example: create a dummy input tensor
+    # Create dummy input tensors
+    S = torch.randint(0, 20, (2, 1746), dtype=torch.long)  # Example: create a dummy input tensor for sequence with appropriate type
+    X = torch.randn([2, 1746, 4, 3])                        # Ensure last dimension is 3 for cross product
+    mask = torch.ones([2, 1746])                            # Example: create a dummy mask tensor
+    chain_M = torch.ones([2, 1746])                         # Example: create a dummy chain mask tensor
+    residue_idx = torch.ones([2, 1746], dtype=torch.long)   # Example: create a dummy residue index tensor
+    chain_encoding_all = torch.zeros([2, 1746])
 
     # Perform the forward pass
-    output = model(x)
+    output = model(X, S, mask, chain_M, residue_idx, chain_encoding_all)
 
-    # Now 'output' contains the result of your model computation
     print(output)
