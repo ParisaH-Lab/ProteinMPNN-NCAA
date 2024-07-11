@@ -2,27 +2,27 @@
 
 import argparse
 import os.path
-import json, time, os, sys, glob
-import shutil
-import warnings
-import numpy as np
-import torch
-from torch import optim
-from torch.utils.data import DataLoader
-import queue
-import copy
-import torch.nn as nn
-import torch.nn.functional as F
-import random
-import os.path
-import subprocess
-from concurrent.futures import ProcessPoolExecutor    
-from utils import worker_init_fn, get_pdbs, loader_pdb, build_training_clusters, PDB_dataset, StructureDataset, StructureLoader
-from model_utils import featurize, loss_smoothed, loss_nll, get_std_opt, ProteinMPNN
-from chiral_determine_module import ChiralDetermine
-from new_combo_module import NewComboChiral
 
 def main(args):
+    import json, time, os, sys, glob
+    import shutil
+    import warnings
+    import numpy as np
+    import torch
+    from torch import optim
+    from torch.utils.data import DataLoader
+    import queue
+    import copy
+    import torch.nn as nn
+    import torch.nn.functional as F
+    import random
+    import os.path
+    import subprocess
+    from concurrent.futures import ProcessPoolExecutor    
+    from utils import worker_init_fn, get_pdbs, loader_pdb, build_training_clusters, PDB_dataset, StructureDataset, StructureLoader
+    from model_utils import featurize, loss_smoothed, loss_nll, get_std_opt, ProteinMPNN
+    from new_combo_module import NewComboChiral
+    from chiral_determine_module import ChiralDetermine 
 
     scaler = torch.cuda.amp.GradScaler()
      
@@ -77,19 +77,16 @@ def main(args):
     valid_loader = torch.utils.data.DataLoader(valid_set, worker_init_fn=worker_init_fn, **LOAD_PARAM)
 
 
-    model = NewComboChiral(edge_features=args.hidden_dim, 
+    model = ProteinMPNN(node_features=args.hidden_dim, 
+                        edge_features=args.hidden_dim, 
                         hidden_dim=args.hidden_dim, 
                         num_encoder_layers=args.num_encoder_layers, 
                         num_decoder_layers=args.num_encoder_layers, 
                         k_neighbors=args.num_neighbors, 
                         dropout=args.dropout, 
-                        augment_eps=args.backbone_noise,
-                        input_size=args.hidden_dim, 
-                        out1=2)  # Adjust the out1 parameter as needed
-    
-    chiral_model = ChiralDetermine(input_size=args.hidden_dim, out1=2)  # Initialize ChiralDetermine
+                        augment_eps=args.backbone_noise)
     model.to(device)
-    chiral_model.to(device)
+
 
     if PATH:
         checkpoint = torch.load(PATH)
@@ -143,7 +140,6 @@ def main(args):
             for _, batch in enumerate(loader_train):
                 start_batch = time.time()
                 X, S, mask, lengths, chain_M, residue_idx, mask_self, chain_encoding_all = featurize(batch, device)
-                print("Shape of X:", X.shape)  # Print shape of X
                 elapsed_featurize = time.time() - start_batch
                 optimizer.zero_grad()
                 mask_for_loss = mask*chain_M
@@ -151,6 +147,12 @@ def main(args):
                 if args.mixed_precision:
                     with torch.cuda.amp.autocast():
                         log_probs = model(X, S, mask, chain_M, residue_idx, chain_encoding_all)
+                        print("Input X shape:", X.shape)
+                        print("Input S shape:", S.shape)
+                        print("Mask shape:", mask.shape)
+                        print("Chain_M shape:", chain_M.shape)
+                        print("Residue_idx shape:", residue_idx.shape)
+                        print("Chain_encoding_all shape:", chain_encoding_all.shape)
                         print("Log probabilities shape:", log_probs.shape)  # Print shape of log_probs
                         print("Log probabilities sample:", log_probs[0])  # Print a sample of log_probs
                         _, loss_av_smoothed = loss_smoothed(S, log_probs, mask_for_loss)
