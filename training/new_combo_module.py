@@ -88,7 +88,15 @@ if __name__ == "__main__":
     residue_idx = torch.ones([2, 1746], dtype=torch.long)   # Example: create a dummy residue index tensor
     chain_encoding_all = torch.zeros([2, 1746])
 
+    print(f"X shape: {X.shape}")
+    print(f"S shape: {S.shape}")
+    print(f"mask shape: {mask.shape}")
+    print(f"chain_M shape: {chain_M.shape}")
+    print(f"residue_idx shape: {residue_idx.shape}")
+    print(f"chain_encoding_all shape: {chain_encoding_all.shape}")
+
     # Perform the forward pass
     output = model(X, S, mask, chain_M, residue_idx, chain_encoding_all)
 
+    print(f"Output shape: {output.shape}")
     print(output)

@@ -10,7 +10,7 @@ import torch
 #     print("CUDA is not available. Loading on CPU.")
 
 # Load the checkpoint with CPU mapping
-checkpoint = torch.load('/projects/bgmp/lmjone/internship/ProteinMPNN-PH/training/vanilla_sample_training_output/model_weights/epoch_last.pt', map_location=torch.device('cpu'))
+checkpoint = torch.load('/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/vanilla_sample_training_output/model_weights/epoch_last.pt', 'cuda' if torch.cuda.is_available() else 'cpu')
 
 # Check for keys
 print("Checkpoint keys:", checkpoint.keys())
