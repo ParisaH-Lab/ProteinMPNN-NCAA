@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import argparse
 import os.path
 
@@ -8,7 +10,7 @@ def main(args):
     import numpy as np
     import torch
     from torch import optim
-    from torch.utils.data import DataLoader
+    from torch.utils.data import DataLoader, ConcatDataset
     import queue
     import copy
     import torch.nn as nn
@@ -19,6 +21,9 @@ def main(args):
     from concurrent.futures import ProcessPoolExecutor    
     from utils import worker_init_fn, get_pdbs, loader_pdb, build_training_clusters, PDB_dataset, StructureDataset, StructureLoader
     from model_utils import featurize, loss_smoothed, loss_nll, get_std_opt, ProteinMPNN
+    from new_combo_module import NewComboChiral
+    from chiral_determine_module import ChiralDetermine
+    import torch.nn.functional as F 
 
     scaler = torch.cuda.amp.GradScaler()
      
@@ -53,13 +58,11 @@ def main(args):
         "HOMO"    : 0.70 #min seq.id. to detect homo chains
     }
 
-
     LOAD_PARAM = {'batch_size': 1,
                   'shuffle': True,
                   'pin_memory':False,
                   'num_workers': 4}
 
-   
     if args.debug:
         args.num_examples_per_epoch = 50
         args.max_protein_length = 1000
@@ -72,17 +75,16 @@ def main(args):
     valid_set = PDB_dataset(list(valid.keys()), loader_pdb, valid, params)
     valid_loader = torch.utils.data.DataLoader(valid_set, worker_init_fn=worker_init_fn, **LOAD_PARAM)
 
-
-    model = ProteinMPNN(node_features=args.hidden_dim, 
-                        edge_features=args.hidden_dim, 
-                        hidden_dim=args.hidden_dim, 
-                        num_encoder_layers=args.num_encoder_layers, 
-                        num_decoder_layers=args.num_encoder_layers, 
-                        k_neighbors=args.num_neighbors, 
-                        dropout=args.dropout, 
-                        augment_eps=args.backbone_noise)
+    model = NewComboChiral(edge_features=args.hidden_dim, 
+                           hidden_dim=args.hidden_dim, 
+                           num_encoder_layers=args.num_encoder_layers, 
+                           num_decoder_layers=args.num_encoder_layers, 
+                           dropout=args.dropout, 
+                           k_neighbors=args.num_neighbors, 
+                           augment_eps=args.backbone_noise, 
+                           input_size=21,  # Assuming input_size according to your example
+                           out1=2)          # Assuming out1 according to your example
     model.to(device)
-
 
     if PATH:
         checkpoint = torch.load(PATH)
@@ -94,11 +96,10 @@ def main(args):
         epoch = 0
 
     optimizer = get_std_opt(model.parameters(), args.hidden_dim, total_step)
-
+    criterion = nn.BCELoss() # Initialize binary loss function classification
 
     if PATH:
         optimizer.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-
 
     with ProcessPoolExecutor(max_workers=12) as executor:
         q = queue.Queue(maxsize=3)
@@ -133,36 +134,53 @@ def main(args):
                     q.put_nowait(executor.submit(get_pdbs, train_loader, 1, args.max_protein_length, args.num_examples_per_epoch))
                     p.put_nowait(executor.submit(get_pdbs, valid_loader, 1, args.max_protein_length, args.num_examples_per_epoch))
                 reload_c += 1
-            for _, batch in enumerate(loader_train):
+            for i, batch in enumerate(loader_train):
                 start_batch = time.time()
                 X, S, mask, lengths, chain_M, residue_idx, mask_self, chain_encoding_all = featurize(batch, device)
                 elapsed_featurize = time.time() - start_batch
                 optimizer.zero_grad()
                 mask_for_loss = mask*chain_M
+
+                output = model(X, S, mask, chain_M, residue_idx, chain_encoding_all) # Passes the input data through the model to obtain logits
                 
-                if args.mixed_precision:
-                    with torch.cuda.amp.autocast():
-                        log_probs = model(X, S, mask, chain_M, residue_idx, chain_encoding_all)
-                        _, loss_av_smoothed = loss_smoothed(S, log_probs, mask_for_loss)
+                targets = torch.zeros(output.size(0), 2, device=output.device)
+                targets[:,0] = 1.
+                    
+                loss = criterion(output, targets) # Calculates the binary cross-entropy loss between model output and targets 
+                
+                print(loss.item())
+
+                loss.backward() # Computes the gradients of the loss
+                optimizer.step() # Updates the model parameters based on the gradients
+                
+                # if args.mixed_precision:
+                #     # with torch.cuda.amp.autocast():
+                #     #     log_probs = model(X, S, mask, chain_M, residue_idx, chain_encoding_all)
+                #     #     _, loss_av_smoothed = loss_smoothed(S, log_probs, mask_for_loss)
            
-                    scaler.scale(loss_av_smoothed).backward()
+                #     scaler.scale(loss).backward()
                      
-                    if args.gradient_norm > 0.0:
-                        total_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), args.gradient_norm)
+                #     if args.gradient_norm > 0.0:
+                #         total_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), args.gradient_norm)
 
-                    scaler.step(optimizer)
-                    scaler.update()
-                else:
-                    log_probs = model(X, S, mask, chain_M, residue_idx, chain_encoding_all)
-                    _, loss_av_smoothed = loss_smoothed(S, log_probs, mask_for_loss)
-                    loss_av_smoothed.backward()
+                #     scaler.step(optimizer)
+                #     scaler.update()
+                # else:
+                #     # log_probs = model(X, S, mask, chain_M, residue_idx, chain_encoding_all)
+                #     # _, loss_av_smoothed = loss_smoothed(S, log_probs, mask_for_loss)
+                #     # loss_av_smoothed.backward()
 
-                    if args.gradient_norm > 0.0:
-                        total_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), args.gradient_norm)
+                #     if args.gradient_norm > 0.0:
+                #         total_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), args.gradient_norm)
 
-                    optimizer.step()
+                #     optimizer.step()
                 
-                loss, loss_av, true_false = loss_nll(S, log_probs, mask_for_loss)
+                # loss, loss_av, true_false = loss_nll(S, log_probs, mask_for_loss)
+                print(targets.shape)
+                print(torch.argmax(output,-1).shape)
+                print(output.shape)
+                print(torch.ones(output.size(0)).shape)
+                true_false = (torch.ones(output.size(0)) == torch.argmax(output,-1)).float()
             
                 train_sum += torch.sum(loss * mask_for_loss).cpu().data.numpy()
                 train_acc += torch.sum(true_false * mask_for_loss).cpu().data.numpy()
@@ -174,7 +192,7 @@ def main(args):
             with torch.no_grad():
                 validation_sum, validation_weights = 0., 0.
                 validation_acc = 0.
-                for _, batch in enumerate(loader_valid):
+                for i, batch in enumerate(loader_valid):
                     X, S, mask, lengths, chain_M, residue_idx, mask_self, chain_encoding_all = featurize(batch, device)
                     log_probs = model(X, S, mask, chain_M, residue_idx, chain_encoding_all)
                     mask_for_loss = mask*chain_M
@@ -227,7 +245,7 @@ def main(args):
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    argparser.add_argument("--path_for_training_data", type=str, default="my_path/pdb_2021aug02", help="path for loading training data") 
+    argparser.add_argument("--path_for_training_data", type=str, default="/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/pdb_2021aug02_sample", help="path for loading training data") 
     argparser.add_argument("--path_for_outputs", type=str, default="./exp_020", help="path for logs and model weights")
     argparser.add_argument("--previous_checkpoint", type=str, default="", help="path for previous model weights, e.g. file.pt")
     argparser.add_argument("--num_epochs", type=int, default=200, help="number of epochs to train for")
@@ -248,4 +266,4 @@ if __name__ == "__main__":
     argparser.add_argument("--mixed_precision", type=bool, default=True, help="train with mixed precision")
  
     args = argparser.parse_args()    
-    main(args)  
+    main(args)
