@@ -148,8 +148,6 @@ def main(args):
                     
                 loss = criterion(output, targets) # Calculates the binary cross-entropy loss between model output and targets 
                 
-                print(loss.item())
-
                 loss.backward() # Computes the gradients of the loss
                 optimizer.step() # Updates the model parameters based on the gradients
                 
@@ -176,15 +174,18 @@ def main(args):
                 #     optimizer.step()
                 
                 # loss, loss_av, true_false = loss_nll(S, log_probs, mask_for_loss)
-                print(targets.shape)
-                print(torch.argmax(output,-1).shape)
-                print(output.shape)
-                print(torch.ones(output.size(0)).shape)
+                # print(targets.shape)
+                # print(torch.argmax(output,-1).shape)
+                # print(output.shape)
+                # print(torch.ones(output.size(0)).shape)
                 true_false = (torch.ones(output.size(0)) == torch.argmax(output,-1)).float()
             
-                train_sum += torch.sum(loss * mask_for_loss).cpu().data.numpy()
-                train_acc += torch.sum(true_false * mask_for_loss).cpu().data.numpy()
-                train_weights += torch.sum(mask_for_loss).cpu().data.numpy()
+                # train_sum += torch.sum(loss * mask_for_loss).cpu().data.numpy()
+                # train_acc += torch.sum(true_false * mask_for_loss).cpu().data.numpy()
+                # train_weights += torch.sum(mask_for_loss).cpu().data.numpy()
+                train_sum += torch.sum(loss).cpu().data.numpy()
+                train_acc += torch.sum(true_false).cpu().data.numpy()
+                # train_weights += torch.sum(mask_for_loss).cpu().data.numpy()
 
                 total_step += 1
 
@@ -196,17 +197,26 @@ def main(args):
                     X, S, mask, lengths, chain_M, residue_idx, mask_self, chain_encoding_all = featurize(batch, device)
                     log_probs = model(X, S, mask, chain_M, residue_idx, chain_encoding_all)
                     mask_for_loss = mask*chain_M
-                    loss, loss_av, true_false = loss_nll(S, log_probs, mask_for_loss)
+                    # loss, loss_av, true_false = loss_nll(S, log_probs, mask_for_loss)
+                    targets = torch.zeros(log_probs.size(0), 2, device=log_probs.device)
+                    loss = criterion(output, targets)
+                    true_false = (torch.ones(log_probs.size(0)) == torch.argmax(log_probs,-1)).float()
                     
-                    validation_sum += torch.sum(loss * mask_for_loss).cpu().data.numpy()
-                    validation_acc += torch.sum(true_false * mask_for_loss).cpu().data.numpy()
-                    validation_weights += torch.sum(mask_for_loss).cpu().data.numpy()
+                    validation_sum += torch.sum(loss).cpu().data.numpy()
+                    validation_acc += torch.sum(true_false).cpu().data.numpy()
+                    # validation_sum += torch.sum(loss * mask_for_loss).cpu().data.numpy()
+                    # validation_acc += torch.sum(true_false * mask_for_loss).cpu().data.numpy()
+                    # validation_weights += torch.sum(mask_for_loss).cpu().data.numpy()
             
-            train_loss = train_sum / train_weights
-            train_accuracy = train_acc / train_weights
+            # train_loss = train_sum / train_weights
+            # train_accuracy = train_acc / train_weights
+            train_loss = train_sum
+            train_accuracy = train_acc
             train_perplexity = np.exp(train_loss)
-            validation_loss = validation_sum / validation_weights
-            validation_accuracy = validation_acc / validation_weights
+            # validation_loss = validation_sum / validation_weights
+            # validation_accuracy = validation_acc / validation_weights
+            validation_loss = validation_sum
+            validation_accuracy = validation_acc
             validation_perplexity = np.exp(validation_loss)
             
             train_perplexity_ = np.format_float_positional(np.float32(train_perplexity), unique=False, precision=3)     
