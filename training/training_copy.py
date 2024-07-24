@@ -1,11 +1,6 @@
-#!/usr/bin/env python
-
 import argparse
 import os.path
 
-###########
-# IMPORTS #
-###########
 def main(args):
     import json, time, os, sys, glob
     import shutil
@@ -24,8 +19,6 @@ def main(args):
     from concurrent.futures import ProcessPoolExecutor    
     from utils import worker_init_fn, get_pdbs, loader_pdb, build_training_clusters, PDB_dataset, StructureDataset, StructureLoader
     from model_utils import featurize, loss_smoothed, loss_nll, get_std_opt, ProteinMPNN
-    from new_combo_module import NewComboChiral #Import NewComboChiral
-    from chiral_determine_module import ChiralDetermine #Import ChiralDetermine
 
     scaler = torch.cuda.amp.GradScaler()
      
@@ -79,17 +72,15 @@ def main(args):
     valid_set = PDB_dataset(list(valid.keys()), loader_pdb, valid, params)
     valid_loader = torch.utils.data.DataLoader(valid_set, worker_init_fn=worker_init_fn, **LOAD_PARAM)
 
-# Initializing model, replaced ProteinMPNN w/ NewComboChiral
-    model = NewComboChiral(edge_features=args.hidden_dim, 
-                           hidden_dim=args.hidden_dim, 
-                           num_encoder_layers=args.num_encoder_layers, 
-                           num_decoder_layers=args.num_encoder_layers, 
-                           k_neighbors=args.num_neighbors, 
-                           dropout=args.dropout, 
-                           augment_eps=args.backbone_noise,
-                           input_size=21,  
-                           out1=2)
-    
+
+    model = ProteinMPNN(node_features=args.hidden_dim, 
+                        edge_features=args.hidden_dim, 
+                        hidden_dim=args.hidden_dim, 
+                        num_encoder_layers=args.num_encoder_layers, 
+                        num_decoder_layers=args.num_encoder_layers, 
+                        k_neighbors=args.num_neighbors, 
+                        dropout=args.dropout, 
+                        augment_eps=args.backbone_noise)
     model.to(device)
 
 
@@ -152,19 +143,7 @@ def main(args):
                 if args.mixed_precision:
                     with torch.cuda.amp.autocast():
                         log_probs = model(X, S, mask, chain_M, residue_idx, chain_encoding_all)
-                        # print("Input X shape:", X.shape)
-                        # print("Input S shape:", S.shape)
-                        # print("Mask shape:", mask.shape)
-                        # print("Chain_M shape:", chain_M.shape)
-                        # print("Residue_idx shape:", residue_idx.shape)
-                        # print("Chain_encoding_all shape:", chain_encoding_all.shape)
-                        # print("Log probabilities shape:", log_probs.shape)  # Print shape of log_probs
-                        # print("Log probabilities sample:", log_probs[0])  # Print a sample of log_probs
-                        # print(f"Shapes before loss calculation:")
-                        # print(f"S shape: {S.shape}")
-                        # print(f"log_probs shape: {log_probs.shape}")
-                        # print(f"mask_for_loss shape: {mask_for_loss.shape}")
-                        # _, loss_av_smoothed = loss_smoothed(S, log_probs, mask_for_loss)
+                        _, loss_av_smoothed = loss_smoothed(S, log_probs, mask_for_loss)
            
                     scaler.scale(loss_av_smoothed).backward()
                      
@@ -248,7 +227,7 @@ def main(args):
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    argparser.add_argument("--path_for_training_data", type=str, default="/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/pdb_2021aug02_sample", help="path for loading training data") 
+    argparser.add_argument("--path_for_training_data", type=str, default="my_path/pdb_2021aug02", help="path for loading training data") 
     argparser.add_argument("--path_for_outputs", type=str, default="./exp_020", help="path for logs and model weights")
     argparser.add_argument("--previous_checkpoint", type=str, default="", help="path for previous model weights, e.g. file.pt")
     argparser.add_argument("--num_epochs", type=int, default=200, help="number of epochs to train for")
