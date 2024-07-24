@@ -39,6 +39,14 @@ dchiral_tensor = torch.randn(dchiral_tensor_shape)
 output = model(vanilla_tensor, dchiral_tensor)
 print(output.shape)  # This should print torch.Size([15, 574, 42])
 
-# Print the probabilities of each amino acid for the first sample and first position
-print("Probabilities of each amino acid:")
-print(output[0, 0, :])
+# Specify the samples and positions you want to inspect
+samples_to_inspect = [0, 1, 2]  # First three samples (proteins)
+positions_to_inspect = [0, 1, 2]  # First three positions (residues)
+
+# Print the probabilities of each amino acid for the specified samples and positions
+for sample in samples_to_inspect:
+    for position in positions_to_inspect:
+        print(f"Probabilities for sample (protein) {sample}, position (residue) {position}:")
+        d_chiral_prob = output[sample, position, 0].item()
+        l_chiral_prob = output[sample, position, 1].item()
+        print(f"d-chiral probability: {d_chiral_prob}, l-chiral probability: {l_chiral_prob}")
