@@ -47,14 +47,13 @@ class NewComboChiral(nn.Module):
         vanilla_train_weights = torch.load("/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/vanilla_sample_training_output/model_weights/epoch200_step564.pt", map_location=torch.device('cpu'))
         dchiral_train_weights = torch.load("/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/mirrored_sample_training_output/model_weights/epoch200_step606.pt", map_location=torch.device('cpu'))
         
-        # Load state dicts with strict=False to ignore unexpected keys
-        missing_keys_v, unexpected_keys_v = self.vanilla.load_state_dict(vanilla_train_weights["model_state_dict"], strict=False)
-        print(f"Vanilla model - Missing keys: {missing_keys_v}")
-        print(f"Vanilla model - Unexpected keys: {unexpected_keys_v}")
+        # Extract model state dictionaries
+        vanilla_model_state_dict = vanilla_train_weights['model_state_dict']
+        dchiral_model_state_dict = dchiral_train_weights['model_state_dict']
 
-        missing_keys_d, unexpected_keys_d = self.dchiral.load_state_dict(dchiral_train_weights["model_state_dict"], strict=False)
-        print(f"Dchiral model - Missing keys: {missing_keys_d}")
-        print(f"Dchiral model - Unexpected keys: {unexpected_keys_d}")
+        # Load the state dictionaries
+        self.vanilla.load_state_dict(vanilla_model_state_dict)
+        self.dchiral.load_state_dict(dchiral_model_state_dict)
 
         # Set models to evaluation mode
         self.vanilla.eval()
@@ -66,25 +65,25 @@ class NewComboChiral(nn.Module):
         dchiral_out = self.dchiral(X, S, mask, chain_M, residue_idx, chain_encoding_all)
         
         # Print shapes of vanilla_out and dchiral_out for debugging
-        print(f"vanilla_out shape: {vanilla_out.shape}")
-        print(f"dchiral_out shape: {dchiral_out.shape}")
+        # print(f"vanilla_out shape: {vanilla_out.shape}")
+        # print(f"dchiral_out shape: {dchiral_out.shape}")
 
         new_combo = self.chiraldetermine(vanilla_out, dchiral_out)
-        print(f"new_combo shape before reduction: {new_combo.shape}")
+        # print(f"new_combo shape before reduction: {new_combo.shape}")
 
         try:
             # Combine outputs using chiraldetermine
             new_combo = self.chiraldetermine(vanilla_out, dchiral_out)
             # Print shape of new_combo for debugging
-            print(f"new_combo shape before reduction: {new_combo.shape}")
+            # print(f"new_combo shape before reduction: {new_combo.shape}")
         
             # Reduce dimensions by taking the mean across seq_length dimension
             new_combo = torch.mean(new_combo, dim=1)  # Shape: [batch_size, 2]
             # Print shape for debugging
-            print(f"Shape of new_combo before final layer: {new_combo.shape}")
+            # print(f"Shape of new_combo before final layer: {new_combo.shape}")
         
         except Exception as e:
-            print(f"Error in ChiralDetermine: {e}")
+            #print(f"Error in ChiralDetermine: {e}")
             raise
     
         # Apply final linear layer
