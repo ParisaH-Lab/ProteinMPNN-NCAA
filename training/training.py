@@ -1,36 +1,39 @@
 #!/usr/bin/env python
 
+###########
+# IMPORTS #
+###########
+
 import argparse
-import os.path
+import os
+import json
+import time
+import shutil
+import warnings
+import numpy as np
+import torch
+from torch import optim
+from torch.utils.data import DataLoader, ConcatDataset
+from concurrent.futures import ProcessPoolExecutor
+import queue
+import copy
+import torch.nn as nn
+import torch.nn.functional as F
+import random
+import subprocess
+from utils import worker_init_fn, get_pdbs, loader_pdb, build_training_clusters, PDB_dataset, StructureDataset, StructureLoader
+from model_utils import featurize, get_std_opt
+from new_combo_module import NewComboChiral
+
+########
+# MAIN #
+########
 
 def main(args):
-    import json, time, os, sys, glob
-    import shutil
-    import warnings
-    import numpy as np
-    import torch
-    from torch import optim
-    from torch.utils.data import DataLoader, ConcatDataset
-    import queue
-    import copy
-    import torch.nn as nn
-    import torch.nn.functional as F
-    import random
-    import os.path
-    import subprocess
-    from concurrent.futures import ProcessPoolExecutor    
-    from utils import worker_init_fn, get_pdbs, loader_pdb, build_training_clusters, PDB_dataset, StructureDataset, StructureLoader
-    from model_utils import featurize, loss_smoothed, loss_nll, get_std_opt, ProteinMPNN
-    from new_combo_module import NewComboChiral
-    from chiral_determine_module import ChiralDetermine
-    import torch.nn.functional as F 
-
-    scaler = torch.cuda.amp.GradScaler()
-     
-    device = torch.device("cuda:0" if (torch.cuda.is_available()) else "cpu")
+    scaler = torch.cuda.amp.GradScaler() # Scales the loss and unscales the gradients automatically
+    device = torch.device("cuda:0" if (torch.cuda.is_available()) else "cpu") # Moves models and tensors to the appropriate device for training (code compatible with both)
 
     base_folder = time.strftime(args.path_for_outputs, time.localtime())
-
     if base_folder[-1] != '/':
         base_folder += '/'
     if not os.path.exists(base_folder):
@@ -41,7 +44,6 @@ def main(args):
             os.makedirs(base_folder + subfolder)
 
     PATH = args.previous_checkpoint
-
     logfile = base_folder + 'log.txt'
     if not PATH:
         with open(logfile, 'w') as f:
@@ -62,14 +64,12 @@ def main(args):
                   'shuffle': True,
                   'pin_memory':False,
                   'num_workers': 4}
-
     if args.debug:
         args.num_examples_per_epoch = 50
         args.max_protein_length = 1000
         args.batch_size = 1000
 
     train, valid, test = build_training_clusters(params, args.debug)
-     
     train_set = PDB_dataset(list(train.keys()), loader_pdb, train, params)
     train_loader = torch.utils.data.DataLoader(train_set, worker_init_fn=worker_init_fn, **LOAD_PARAM)
     valid_set = PDB_dataset(list(valid.keys()), loader_pdb, valid, params)
@@ -82,8 +82,8 @@ def main(args):
                            dropout=args.dropout, 
                            k_neighbors=args.num_neighbors, 
                            augment_eps=args.backbone_noise, 
-                           input_size=21,  # Assuming input_size according to your example
-                           out1=2)          # Assuming out1 according to your example
+                           input_size=21, 
+                           out1=2)      
     model.to(device)
 
     if PATH:
@@ -135,86 +135,55 @@ def main(args):
                     p.put_nowait(executor.submit(get_pdbs, valid_loader, 1, args.max_protein_length, args.num_examples_per_epoch))
                 reload_c += 1
             for i, batch in enumerate(loader_train):
-                start_batch = time.time()
                 X, S, mask, lengths, chain_M, residue_idx, mask_self, chain_encoding_all = featurize(batch, device)
-                elapsed_featurize = time.time() - start_batch
                 optimizer.zero_grad()
-                mask_for_loss = mask*chain_M
-
                 output = model(X, S, mask, chain_M, residue_idx, chain_encoding_all) # Passes the input data through the model to obtain logits
                 
+                batch_size = output.size(0) # Trying to ensure targets and outputs have the same shape??
                 targets = torch.zeros(output.size(0), 2, device=output.device)
                 targets[:,0] = 1.
                     
                 loss = criterion(output, targets) # Calculates the binary cross-entropy loss between model output and targets 
-                
                 loss.backward() # Computes the gradients of the loss
                 optimizer.step() # Updates the model parameters based on the gradients
                 
-                # if args.mixed_precision:
-                #     # with torch.cuda.amp.autocast():
-                #     #     log_probs = model(X, S, mask, chain_M, residue_idx, chain_encoding_all)
-                #     #     _, loss_av_smoothed = loss_smoothed(S, log_probs, mask_for_loss)
-           
-                #     scaler.scale(loss).backward()
-                     
-                #     if args.gradient_norm > 0.0:
-                #         total_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), args.gradient_norm)
-
-                #     scaler.step(optimizer)
-                #     scaler.update()
-                # else:
-                #     # log_probs = model(X, S, mask, chain_M, residue_idx, chain_encoding_all)
-                #     # _, loss_av_smoothed = loss_smoothed(S, log_probs, mask_for_loss)
-                #     # loss_av_smoothed.backward()
-
-                #     if args.gradient_norm > 0.0:
-                #         total_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), args.gradient_norm)
-
-                #     optimizer.step()
-                
-                # loss, loss_av, true_false = loss_nll(S, log_probs, mask_for_loss)
-                # print(targets.shape)
-                # print(torch.argmax(output,-1).shape)
-                # print(output.shape)
-                # print(torch.ones(output.size(0)).shape)
                 true_false = (torch.ones(output.size(0)) == torch.argmax(output,-1)).float()
-            
-                # train_sum += torch.sum(loss * mask_for_loss).cpu().data.numpy()
-                # train_acc += torch.sum(true_false * mask_for_loss).cpu().data.numpy()
-                # train_weights += torch.sum(mask_for_loss).cpu().data.numpy()
                 train_sum += torch.sum(loss).cpu().data.numpy()
                 train_acc += torch.sum(true_false).cpu().data.numpy()
-                # train_weights += torch.sum(mask_for_loss).cpu().data.numpy()
-
+                train_total += output.size(0)
                 total_step += 1
+
+                # Print outputs and targets for debugging
+                print(f"Output: {output}")
+                print(f"Targets: {targets}")
 
             model.eval()
             with torch.no_grad():
                 validation_sum, validation_weights = 0., 0.
-                validation_acc = 0.
+                validation_acc, validation_total = 0., 0.
                 for i, batch in enumerate(loader_valid):
                     X, S, mask, lengths, chain_M, residue_idx, mask_self, chain_encoding_all = featurize(batch, device)
-                    log_probs = model(X, S, mask, chain_M, residue_idx, chain_encoding_all)
-                    mask_for_loss = mask*chain_M
-                    # loss, loss_av, true_false = loss_nll(S, log_probs, mask_for_loss)
-                    targets = torch.zeros(log_probs.size(0), 2, device=log_probs.device)
+                    output = model(X, S, mask, chain_M, residue_idx, chain_encoding_all)
+                    
+                    targets = torch.zeros(output.size(0), 2, device=output.device)
+                    targets[:,0] = 1.0
+                    
                     loss = criterion(output, targets)
-                    true_false = (torch.ones(log_probs.size(0)) == torch.argmax(log_probs,-1)).float()
+                    true_false = (torch.ones(output.size(0)) == torch.argmax(output,-1)).float()
                     
                     validation_sum += torch.sum(loss).cpu().data.numpy()
                     validation_acc += torch.sum(true_false).cpu().data.numpy()
-                    # validation_sum += torch.sum(loss * mask_for_loss).cpu().data.numpy()
-                    # validation_acc += torch.sum(true_false * mask_for_loss).cpu().data.numpy()
-                    # validation_weights += torch.sum(mask_for_loss).cpu().data.numpy()
+                    validation_total += output.size(0) #???
+
+                # Print validation loss
+                print(f'Epoch: {e+1}, Validation Loss: {validation_sum}')
             
-            # train_loss = train_sum / train_weights
-            # train_accuracy = train_acc / train_weights
-            train_loss = train_sum
-            train_accuracy = train_acc
+            train_loss = train_sum / train_total
+            train_accuracy = train_acc / train_total
+            # train_loss = train_sum
+            # train_accuracy = train_acc
             train_perplexity = np.exp(train_loss)
-            # validation_loss = validation_sum / validation_weights
-            # validation_accuracy = validation_acc / validation_weights
+
             validation_loss = validation_sum
             validation_accuracy = validation_acc
             validation_perplexity = np.exp(validation_loss)
@@ -251,6 +220,9 @@ def main(args):
                         'optimizer_state_dict': optimizer.optimizer.state_dict(),
                         }, checkpoint_filename)
 
+############
+# ARGPARSE #
+############
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
