@@ -16,18 +16,18 @@ class ChiralDetermine(nn.Module):
         return output
 
 # Example usage
-if __name__ == "__main__":
-    input_size = 21 # Input size
-    out1 = 2 # Output size for binary classification
+# if __name__ == "__main__":
+#     input_size = 21 # Input size
+#     out1 = 2 # Output size for binary classification
 
-    # Create the model
-    model = ChiralDetermine(input_size, out1)
+#     # Create the model
+#     model = ChiralDetermine(input_size, out1)
 
-    # Example input tensors
-    vanilla_tensor = torch.randn(15, 574, input_size)
-    dchiral_tensor = torch.randn(15, 574, input_size)
+#     # Example input tensorsß
+#     vanilla_tensor = torch.randn(15, 574, input_size)
+#     dchiral_tensor = torch.randn(15, 574, input_size)
     
-    # Forward 
-    output = model(vanilla_tensor, dchiral_tensor)
-    print("Output shape:", output.shape)
-    print("Output example:", output[0])
+#     # Forward 
+#     output = model(vanilla_tensor, dchiral_tensor)
+#     print("Output shape:", output.shape)
+#     print("Output example:", output[0])
