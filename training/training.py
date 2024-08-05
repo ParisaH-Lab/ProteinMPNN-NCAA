@@ -126,7 +126,8 @@ def main(args):
             # Intialize metrics for training
             train_sum = 0.0
             train_acc = 0
-            train_weights = 0 
+            train_total_samples = 0 
+            start_time = time.time()
 
             if e % args.reload_data_every_n_epochs == 0:
                 if reload_c != 0:
@@ -140,14 +141,16 @@ def main(args):
                     p.put_nowait(executor.submit(get_pdbs, valid_loader, 1, args.max_protein_length, args.num_examples_per_epoch))
                 reload_c += 1
             for  batch in loader_train:
-                start_batch = time.time()
                 X, S, mask, lengths, chain_M, residue_idx, mask_self, chain_encoding_all = featurize(batch, device)
                 optimizer.zero_grad()
 
                 output = model(X, S, mask, chain_M, residue_idx, chain_encoding_all) # Passes the input data through the model to obtain logits
                 
+                # Original code from Andrew, needed to be changed after altering new_combo_module.py
                 # targets = torch.zeros(output.size(0), 2, device=output.device)
                 # targets[:,0] = 1.
+                # true_false = (torch.ones(output.size(0)) == torch.argmax(output,-1)).float()
+                # true_false = (torch.ones_like(torch.argmax(output, -1)) == torch.argmax(output, -1)).float()
 
                 batch_size = output.size(0)
                 sequence_length = output.size(1)
@@ -158,44 +161,58 @@ def main(args):
                 loss.backward() # Computes the gradients of the loss
                 optimizer.step() # Updates the model parameters based on the gradients
 
-                # true_false = (torch.ones(output.size(0)) == torch.argmax(output,-1)).float()
-                # true_false = (torch.ones_like(torch.argmax(output, -1)) == torch.argmax(output, -1)).float()
-                # Corrected true_false calculation for accuracy
                 predictions = torch.argmax(output, -1)
-                true_labels = torch.ones_like(predictions)  # Set this based on actual labels if available
+                true_labels = torch.ones_like(predictions)  # Set this based on actual labels when it's time!!
                 true_false = (true_labels == predictions).float()
+
                 train_sum += torch.sum(loss).cpu().data.numpy()
                 train_acc += torch.sum(true_false).cpu().data.numpy()
-
+                train_total_samples += predictions.numel()
                 total_step += 1
+
+                # Normalize accuracy and loss by the total number of samples
+                train_accuracy = train_acc / train_total_samples
+                train_loss = train_sum / train_total_samples
+
+            print(f"Validation Loss: {train_loss}, Validation Accuracy: {train_accuracy}")
 
             model.eval()
             with torch.no_grad():
-                validation_sum, validation_weights = 0., 0.
-                validation_acc, validation_total = 0., 0.
+                # Intialize metrics for validation
+                validation_sum = 0.0
+                validation_acc = 0
+                validation_total_samples = 0 
 
                 for i, batch in enumerate(loader_valid):
                     X, S, mask, lengths, chain_M, residue_idx, mask_self, chain_encoding_all = featurize(batch, device)
                     log_probs = model(X, S, mask, chain_M, residue_idx, chain_encoding_all)
 
+                    # Original code from Andrew, needed to be changed after altering new_combo_module.py
                     # targets = torch.zeros(log_probs.size(0), 2, device=log_probs.device)
                     # true_false = (torch.ones(log_probs.size(0)) == torch.argmax(log_probs,-1)).float()
                     # true_false = (torch.ones_like(torch.argmax(log_probs, -1)) == torch.argmax(log_probs, -1)).float()
-                    # Adjust targets to match log_probs shape
+
                     batch_size = log_probs.size(0)
                     sequence_length = log_probs.size(1)
                     targets = torch.zeros(batch_size, sequence_length, 2, device=log_probs.device)
-                    targets[:, :, 0] = 1.0  # Set to appropriate values based on your task
+                    targets[:, :, 0] = 1.0  
 
                     loss = criterion(log_probs, targets)
 
-                    # Corrected true_false calculation for accuracy
                     predictions = torch.argmax(output, -1)
-                    true_labels = torch.ones_like(predictions)  # Set this based on actual labels if available
+                    true_labels = torch.ones_like(predictions)  # Set this based on actual labels when it's time!!
                     true_false = (true_labels == predictions).float()
 
                     validation_sum += torch.sum(loss).cpu().data.numpy()
                     validation_acc += torch.sum(true_false).cpu().data.numpy()
+                    validation_total_samples += predictions.numel()
+
+                    # Normalize validation accuracy and loss by the total number of samples
+                    validation_accuracy = validation_acc / validation_total_samples
+                    validation_loss = validation_sum / validation_total_samples
+
+                # Print validation metrics after they are computed
+                print(f"Validation Loss: {validation_loss}, Validation Accuracy: {validation_accuracy}")
             
             train_loss = train_sum 
             train_accuracy = train_acc 
