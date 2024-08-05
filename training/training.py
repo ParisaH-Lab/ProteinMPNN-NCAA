@@ -142,19 +142,28 @@ def main(args):
             for  batch in loader_train:
                 start_batch = time.time()
                 X, S, mask, lengths, chain_M, residue_idx, mask_self, chain_encoding_all = featurize(batch, device)
-                elapsed_featurize = time.time() - start_batch
                 optimizer.zero_grad()
 
                 output = model(X, S, mask, chain_M, residue_idx, chain_encoding_all) # Passes the input data through the model to obtain logits
                 
-                targets = torch.zeros(output.size(0), 2, device=output.device)
-                targets[:,0] = 1.
+                # targets = torch.zeros(output.size(0), 2, device=output.device)
+                # targets[:,0] = 1.
+
+                batch_size = output.size(0)
+                sequence_length = output.size(1)
+                targets = torch.zeros(batch_size, sequence_length, 2, device=output.device)
+                targets[:, :, 0] = 1.0 
                     
                 loss = criterion(output, targets) # Calculates the binary cross-entropy loss between model output and targets 
                 loss.backward() # Computes the gradients of the loss
                 optimizer.step() # Updates the model parameters based on the gradients
 
-                true_false = (torch.ones(output.size(0)) == torch.argmax(output,-1)).float()
+                # true_false = (torch.ones(output.size(0)) == torch.argmax(output,-1)).float()
+                # true_false = (torch.ones_like(torch.argmax(output, -1)) == torch.argmax(output, -1)).float()
+                # Corrected true_false calculation for accuracy
+                predictions = torch.argmax(output, -1)
+                true_labels = torch.ones_like(predictions)  # Set this based on actual labels if available
+                true_false = (true_labels == predictions).float()
                 train_sum += torch.sum(loss).cpu().data.numpy()
                 train_acc += torch.sum(true_false).cpu().data.numpy()
 
@@ -169,9 +178,21 @@ def main(args):
                     X, S, mask, lengths, chain_M, residue_idx, mask_self, chain_encoding_all = featurize(batch, device)
                     log_probs = model(X, S, mask, chain_M, residue_idx, chain_encoding_all)
 
-                    targets = torch.zeros(log_probs.size(0), 2, device=log_probs.device)
+                    # targets = torch.zeros(log_probs.size(0), 2, device=log_probs.device)
+                    # true_false = (torch.ones(log_probs.size(0)) == torch.argmax(log_probs,-1)).float()
+                    # true_false = (torch.ones_like(torch.argmax(log_probs, -1)) == torch.argmax(log_probs, -1)).float()
+                    # Adjust targets to match log_probs shape
+                    batch_size = log_probs.size(0)
+                    sequence_length = log_probs.size(1)
+                    targets = torch.zeros(batch_size, sequence_length, 2, device=log_probs.device)
+                    targets[:, :, 0] = 1.0  # Set to appropriate values based on your task
+
                     loss = criterion(log_probs, targets)
-                    true_false = (torch.ones(log_probs.size(0)) == torch.argmax(log_probs,-1)).float()
+
+                    # Corrected true_false calculation for accuracy
+                    predictions = torch.argmax(output, -1)
+                    true_labels = torch.ones_like(predictions)  # Set this based on actual labels if available
+                    true_false = (true_labels == predictions).float()
 
                     validation_sum += torch.sum(loss).cpu().data.numpy()
                     validation_acc += torch.sum(true_false).cpu().data.numpy()
