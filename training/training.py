@@ -170,12 +170,6 @@ def main(args):
                 train_total_samples += predictions.numel()
                 total_step += 1
 
-                # Normalize accuracy and loss by the total number of samples
-                train_accuracy = train_acc / train_total_samples
-                train_loss = train_sum / train_total_samples
-
-            print(f"Validation Loss: {train_loss}, Validation Accuracy: {train_accuracy}")
-
             model.eval()
             with torch.no_grad():
                 # Intialize metrics for validation
@@ -206,31 +200,23 @@ def main(args):
                     validation_sum += torch.sum(loss).cpu().data.numpy()
                     validation_acc += torch.sum(true_false).cpu().data.numpy()
                     validation_total_samples += predictions.numel()
-
-                    # Normalize validation accuracy and loss by the total number of samples
-                    validation_accuracy = validation_acc / validation_total_samples
-                    validation_loss = validation_sum / validation_total_samples
-
-                # Print validation metrics after they are computed
-                print(f"Validation Loss: {validation_loss}, Validation Accuracy: {validation_accuracy}")
             
-            train_loss = train_sum 
-            train_accuracy = train_acc 
-            train_perplexity = np.exp(train_loss)
-            validation_loss = validation_sum 
-            validation_accuracy = validation_acc 
-            validation_perplexity = np.exp(validation_loss)
+
+            train_loss = train_sum / train_total_samples
+            train_accuracy = train_acc / train_total_samples
+            validation_loss = validation_sum / train_total_samples
+            validation_accuracy = validation_acc / train_total_samples
             
-            train_perplexity_ = np.format_float_positional(np.float32(train_perplexity), unique=False, precision=3)     
-            validation_perplexity_ = np.format_float_positional(np.float32(validation_perplexity), unique=False, precision=3)
-            train_accuracy_ = np.format_float_positional(np.float32(train_accuracy), unique=False, precision=3)
-            validation_accuracy_ = np.format_float_positional(np.float32(validation_accuracy), unique=False, precision=3)
+            train_loss_formatted = np.format_float_positional(np.float32(train_loss), unique=False, precision=3)
+            validation_loss_formatted = np.format_float_positional(np.float32(validation_loss), unique=False, precision=3)
+            train_accuracy_formatted = np.format_float_positional(np.float32(train_accuracy), unique=False, precision=3)
+            validation_accuracy_formatted = np.format_float_positional(np.float32(validation_accuracy), unique=False, precision=3)
     
             t1 = time.time()
             dt = np.format_float_positional(np.float32(t1-t0), unique=False, precision=1) 
             with open(logfile, 'a') as f:
-                f.write(f'epoch: {e+1}, step: {total_step}, time: {dt}, train: {train_perplexity_}, valid: {validation_perplexity_}, train_acc: {train_accuracy_}, valid_acc: {validation_accuracy_}\n')
-            print(f'epoch: {e+1}, step: {total_step}, time: {dt}, train: {train_perplexity_}, valid: {validation_perplexity_}, train_acc: {train_accuracy_}, valid_acc: {validation_accuracy_}')
+                f.write(f'epoch: {e+1}, step: {total_step}, time: {dt}, train: {train_loss_formatted}, valid: {validation_loss_formatted}, train_acc: {train_accuracy_formatted}, valid_acc: {validation_accuracy_formatted}\n')
+            print(f'epoch: {e+1}, step: {total_step}, time: {dt}, train: {train_loss_formatted}, valid: {validation_loss_formatted}, train_acc: {train_accuracy_formatted}, valid_acc: {validation_accuracy_formatted}')
             
             checkpoint_filename_last = base_folder+'model_weights/epoch_last.pt'.format(e+1, total_step)
             torch.save({
