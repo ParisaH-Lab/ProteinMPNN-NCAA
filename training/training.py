@@ -127,7 +127,6 @@ def main(args):
             train_sum = 0.0
             train_acc = 0
             train_total_samples = 0 
-            start_time = time.time()
 
             if e % args.reload_data_every_n_epochs == 0:
                 if reload_c != 0:
@@ -145,7 +144,7 @@ def main(args):
                 optimizer.zero_grad()
 
                 output = model(X, S, mask, chain_M, residue_idx, chain_encoding_all) # Passes the input data through the model to obtain logits
-                
+
                 # Original code from Andrew, needed to be changed after altering new_combo_module.py
                 # targets = torch.zeros(output.size(0), 2, device=output.device)
                 # targets[:,0] = 1.
@@ -201,16 +200,15 @@ def main(args):
                     validation_acc += torch.sum(true_false).cpu().data.numpy()
                     validation_total_samples += predictions.numel()
             
-
             train_loss = train_sum / train_total_samples
             train_accuracy = train_acc / train_total_samples
-            validation_loss = validation_sum / train_total_samples
-            validation_accuracy = validation_acc / train_total_samples
+            validation_loss = validation_sum / validation_total_samples
+            validation_accuracy = validation_acc / validation_total_samples
             
-            train_loss_formatted = np.format_float_positional(np.float32(train_loss), unique=False, precision=3)
-            validation_loss_formatted = np.format_float_positional(np.float32(validation_loss), unique=False, precision=3)
-            train_accuracy_formatted = np.format_float_positional(np.float32(train_accuracy), unique=False, precision=3)
-            validation_accuracy_formatted = np.format_float_positional(np.float32(validation_accuracy), unique=False, precision=3)
+            train_loss_formatted = np.format_float_positional(np.float32(train_loss), unique=False, precision=5)
+            train_accuracy_formatted = np.format_float_positional(np.float32(validation_loss), unique=False, precision=5)
+            validation_loss_formatted = np.format_float_positional(np.float32(train_accuracy), unique=False, precision=5)
+            validation_accuracy_formatted = np.format_float_positional(np.float32(validation_accuracy), unique=False, precision=5)
     
             t1 = time.time()
             dt = np.format_float_positional(np.float32(t1-t0), unique=False, precision=1) 
