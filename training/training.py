@@ -8,8 +8,6 @@ import argparse
 import os
 import json
 import time
-import shutil
-import warnings
 import numpy as np
 import torch
 from torch import optim
@@ -19,8 +17,6 @@ import queue
 import copy
 import torch.nn as nn
 import torch.nn.functional as F
-import random
-import subprocess
 from utils import worker_init_fn, get_pdbs, loader_pdb, build_training_clusters, PDB_dataset, StructureDataset, StructureLoader
 from model_utils import featurize, get_std_opt
 from new_combo_module import NewComboChiral
@@ -143,27 +139,34 @@ def main(args):
                 X, S, mask, lengths, chain_M, residue_idx, mask_self, chain_encoding_all = featurize(batch, device)
                 optimizer.zero_grad()
 
-                output = model(X, S, mask, chain_M, residue_idx, chain_encoding_all) # Passes the input data through the model to obtain logits
+                # Model forward pass 
+                output = model(X, S, mask, chain_M, residue_idx, chain_encoding_all) 
 
-                # Original code from Andrew, needed to be changed after altering new_combo_module.py
-                # targets = torch.zeros(output.size(0), 2, device=output.device)
-                # targets[:,0] = 1.
-                # true_false = (torch.ones(output.size(0)) == torch.argmax(output,-1)).float()
-                # true_false = (torch.ones_like(torch.argmax(output, -1)) == torch.argmax(output, -1)).float()
-
+                # Initialize targets for l-chiral (class 1)
                 batch_size = output.size(0)
                 sequence_length = output.size(1)
+
+                # Create a tensor of zeros
                 targets = torch.zeros(batch_size, sequence_length, 2, device=output.device)
-                targets[:, :, 0] = 1.0 
+
+                # Set the second channel to 1 for l-chiral (class 1)
+                targets[:, :, 1] = 1.0 # Set class 1 (l-chiral) to 1
                     
+                # Compute loss using BCELoss
                 loss = criterion(output, targets) # Calculates the binary cross-entropy loss between model output and targets 
                 loss.backward() # Computes the gradients of the loss
                 optimizer.step() # Updates the model parameters based on the gradients
 
+                # Get class predictions
                 predictions = torch.argmax(output, -1)
-                true_labels = torch.ones_like(predictions)  # Set this based on actual labels when it's time!!
-                true_false = (true_labels == predictions).float()
 
+                # Target labels for accuracy calculation (all ones for l-chiral) 
+                target_labels = torch.ones_like(predictions, device=output.device)  # Shape: [batch_size, sequence_length
+
+                # Compare predictions with target labels
+                true_false = (predictions == target_labels).float()
+
+                # Updating training metrics
                 train_sum += torch.sum(loss).cpu().data.numpy()
                 train_acc += torch.sum(true_false).cpu().data.numpy()
                 train_total_samples += predictions.numel()
@@ -171,6 +174,7 @@ def main(args):
 
             model.eval()
             with torch.no_grad():
+            
                 # Intialize metrics for validation
                 validation_sum = 0.0
                 validation_acc = 0
@@ -178,24 +182,33 @@ def main(args):
 
                 for i, batch in enumerate(loader_valid):
                     X, S, mask, lengths, chain_M, residue_idx, mask_self, chain_encoding_all = featurize(batch, device)
+                    
+                    # Model forward pass
                     log_probs = model(X, S, mask, chain_M, residue_idx, chain_encoding_all)
 
-                    # Original code from Andrew, needed to be changed after altering new_combo_module.py
-                    # targets = torch.zeros(log_probs.size(0), 2, device=log_probs.device)
-                    # true_false = (torch.ones(log_probs.size(0)) == torch.argmax(log_probs,-1)).float()
-                    # true_false = (torch.ones_like(torch.argmax(log_probs, -1)) == torch.argmax(log_probs, -1)).float()
-
+                    # Initialize targets for l-chiral (class 1)
                     batch_size = log_probs.size(0)
                     sequence_length = log_probs.size(1)
-                    targets = torch.zeros(batch_size, sequence_length, 2, device=log_probs.device)
-                    targets[:, :, 0] = 1.0  
 
+                    # Create a tensor of zeros 
+                    targets = torch.zeros(batch_size, sequence_length, 2, device=log_probs.device)
+
+                    # Set the second channel to 1 for l-chiral (class 1)
+                    targets[:, :, 1] = 1.0 # Set class 1 (l-chiral) to 1
+
+                    # Compute loss
                     loss = criterion(log_probs, targets)
 
+                    # Get class predictions
                     predictions = torch.argmax(output, -1)
-                    true_labels = torch.ones_like(predictions)  # Set this based on actual labels when it's time!!
-                    true_false = (true_labels == predictions).float()
 
+                    # Target labels are all ones since we are dealing with l-chiral data exclusively (FOR NOW)
+                    target_labels = torch.ones_like(predictions, device=output.device)  # Shape: [batch_size, sequence_length]
+
+                    # Compare predictions with target labels
+                    true_false = (predictions  == target_labels).float()
+
+                    # Update validation metrics
                     validation_sum += torch.sum(loss).cpu().data.numpy()
                     validation_acc += torch.sum(true_false).cpu().data.numpy()
                     validation_total_samples += predictions.numel()
@@ -205,10 +218,10 @@ def main(args):
             validation_loss = validation_sum / validation_total_samples
             validation_accuracy = validation_acc / validation_total_samples
             
-            train_loss_formatted = np.format_float_positional(np.float32(train_loss), unique=False, precision=5)
-            train_accuracy_formatted = np.format_float_positional(np.float32(validation_loss), unique=False, precision=5)
-            validation_loss_formatted = np.format_float_positional(np.float32(train_accuracy), unique=False, precision=5)
-            validation_accuracy_formatted = np.format_float_positional(np.float32(validation_accuracy), unique=False, precision=5)
+            train_loss_formatted = np.format_float_positional(np.float32(train_loss), unique=False, precision=6)
+            train_accuracy_formatted = np.format_float_positional(np.float32(validation_loss), unique=False, precision=6)
+            validation_loss_formatted = np.format_float_positional(np.float32(train_accuracy), unique=False, precision=6)
+            validation_accuracy_formatted = np.format_float_positional(np.float32(validation_accuracy), unique=False, precision=6)
     
             t1 = time.time()
             dt = np.format_float_positional(np.float32(t1-t0), unique=False, precision=1) 
