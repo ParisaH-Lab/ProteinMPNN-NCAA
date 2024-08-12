@@ -123,6 +123,7 @@ def main(args):
             train_sum = 0.0
             train_acc = 0
             train_total_samples = 0 
+            batch_train_steps = 0
 
             if e % args.reload_data_every_n_epochs == 0:
                 if reload_c != 0:
@@ -180,6 +181,7 @@ def main(args):
                 train_sum += torch.sum(loss).cpu().data.numpy()
                 train_acc += torch.sum(true_false).cpu().data.numpy()
                 train_total_samples += predictions_binary.numel()
+                batch_train_steps += 1
                 total_step += 1
 
             model.eval()
@@ -189,6 +191,7 @@ def main(args):
                 validation_sum = 0.0
                 validation_acc = 0
                 validation_total_samples = 0 
+                batch_valid_steps = 0
 
                 for i, batch in enumerate(loader_valid):
                     X, S, mask, lengths, chain_M, residue_idx, mask_self, chain_encoding_all = featurize(batch, device)
@@ -213,7 +216,8 @@ def main(args):
                     predictions_binary = torch.argmax(output, -1)
 
                     # Target labels are all ones since we are dealing with l-chiral data exclusively (FOR NOW)
-                    target_binary = torch.ones_like(predictions_binary, device=output.device)  # Shape: [batch_size, sequence_length]
+                    # target_binary = torch.ones_like(predictions_binary, device=output.device)  # Shape: [batch_size, sequence_length]
+                    target_binary = torch.argmax(targets, -1)  # Shape: [batch_size, sequence_length]
 
                     # Compare predictions with target labels
                     true_false = (predictions_binary  == target_binary).float()
@@ -222,10 +226,11 @@ def main(args):
                     validation_sum += torch.sum(loss).cpu().data.numpy()
                     validation_acc += torch.sum(true_false).cpu().data.numpy()
                     validation_total_samples += predictions_binary.numel()
+                    batch_valid_steps += 1
             
-            train_loss = train_sum / train_total_samples
+            train_loss = train_sum / batch_train_steps
             train_accuracy = train_acc / train_total_samples
-            validation_loss = validation_sum / validation_total_samples
+            validation_loss = validation_sum / batch_valid_steps
             validation_accuracy = validation_acc / validation_total_samples
             
             train_loss_formatted = np.format_float_positional(np.float32(train_loss), unique=False, precision=6)
