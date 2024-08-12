@@ -213,7 +213,7 @@ def main(args):
                     loss = criterion(log_probs, targets)
 
                     # Get binary class predictions
-                    predictions_binary = torch.argmax(output, -1)
+                    predictions_binary = torch.argmax(log_probs, -1)
 
                     # Target labels are all ones since we are dealing with l-chiral data exclusively (FOR NOW)
                     # target_binary = torch.ones_like(predictions_binary, device=output.device)  # Shape: [batch_size, sequence_length]
