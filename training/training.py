@@ -92,7 +92,7 @@ def main(args):
         total_step = 0
         epoch = 0
 
-    optimizer = get_std_opt(model.parameters(), args.hidden_dim, total_step)
+    optimizer = get_std_opt(model.chiraldetermine.parameters(), args.hidden_dim, total_step)
     criterion = nn.BCELoss() # Initialize binary loss function classification
 
     if PATH:
@@ -149,7 +149,7 @@ def main(args):
                 # Create a tensor of zeros
                 targets = torch.zeros(batch_size, sequence_length, 2, device=output.device)
 
-                # Set the second channel to 1 for l-chiral (class 1)
+                # Set the second channel to 0 for l-chiral (class 0)
                 targets[:, :, 1] = 1.0 # Set class 1 (l-chiral) to 1
                     
                 # Compute loss using BCELoss
@@ -157,19 +157,29 @@ def main(args):
                 loss.backward() # Computes the gradients of the loss
                 optimizer.step() # Updates the model parameters based on the gradients
 
-                # Get class predictions
-                predictions = torch.argmax(output, -1)
+                # Get binary class predictions
+                predictions_binary = torch.argmax(output, -1)
 
-                # Target labels for accuracy calculation (all ones for l-chiral) 
-                target_labels = torch.ones_like(predictions, device=output.device)  # Shape: [batch_size, sequence_length
+                # Convert targets to binary labels
+                targets_binary = torch.argmax(targets, -1)
+
+                # # Debugging statements
+                # print(f"Output shape: {output.shape}")
+                # print(f"Targets shape: {targets.shape}")
+                # print(f"Targets: {targets}")
+                # print(f"Predictions shape: {predictions_binary.shape}")  
+                # print(f"Predictions: {predictions_binary}")
+                # print(f"Target labels shape: {targets_binary.shape}") 
+                # print(f"Target labels: {targets_binary}")
 
                 # Compare predictions with target labels
-                true_false = (predictions == target_labels).float()
+                true_false = (predictions_binary == targets_binary).float()
+                # print(f"True/False comparison: {true_false}")
 
                 # Updating training metrics
                 train_sum += torch.sum(loss).cpu().data.numpy()
                 train_acc += torch.sum(true_false).cpu().data.numpy()
-                train_total_samples += predictions.numel()
+                train_total_samples += predictions_binary.numel()
                 total_step += 1
 
             model.eval()
@@ -199,19 +209,19 @@ def main(args):
                     # Compute loss
                     loss = criterion(log_probs, targets)
 
-                    # Get class predictions
-                    predictions = torch.argmax(output, -1)
+                    # Get binary class predictions
+                    predictions_binary = torch.argmax(output, -1)
 
                     # Target labels are all ones since we are dealing with l-chiral data exclusively (FOR NOW)
-                    target_labels = torch.ones_like(predictions, device=output.device)  # Shape: [batch_size, sequence_length]
+                    target_binary = torch.ones_like(predictions_binary, device=output.device)  # Shape: [batch_size, sequence_length]
 
                     # Compare predictions with target labels
-                    true_false = (predictions  == target_labels).float()
+                    true_false = (predictions_binary  == target_binary).float()
 
                     # Update validation metrics
                     validation_sum += torch.sum(loss).cpu().data.numpy()
                     validation_acc += torch.sum(true_false).cpu().data.numpy()
-                    validation_total_samples += predictions.numel()
+                    validation_total_samples += predictions_binary.numel()
             
             train_loss = train_sum / train_total_samples
             train_accuracy = train_acc / train_total_samples
