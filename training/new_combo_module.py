@@ -52,6 +52,10 @@ class NewComboChiral(nn.Module):
         self.vanilla.load_state_dict(vanilla_model_state_dict)
         self.dchiral.load_state_dict(dchiral_model_state_dict)
 
+        # Freeze the weights in the vanilla and d-chiral models 
+        for param in list(self.vanilla.parameters()) + list(self.dchiral.parameters()):
+            param.requires_grad = False
+
         # Set models to evaluation mode
         self.vanilla.eval()
         self.dchiral.eval()
