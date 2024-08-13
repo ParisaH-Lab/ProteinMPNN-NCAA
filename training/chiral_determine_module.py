@@ -15,7 +15,7 @@ class ChiralDetermine(nn.Module):
         output = self.sigmoid(combined_out)
         return output
 
-# Example usage
+# # Example usage
 # if __name__ == "__main__":
 #     input_size = 21 # Input size
 #     out1 = 2 # Output size for binary classification
