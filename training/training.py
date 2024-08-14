@@ -164,18 +164,18 @@ def main(args):
                 # Convert targets to binary labels
                 targets_binary = torch.argmax(targets, -1)
 
-                # # Debugging statements
-                # print(f"Output shape: {output.shape}")
-                # print(f"Targets shape: {targets.shape}")
-                # print(f"Targets: {targets}")
-                # print(f"Predictions shape: {predictions_binary.shape}")  
-                # print(f"Predictions: {predictions_binary}")
-                # print(f"Target labels shape: {targets_binary.shape}") 
-                # print(f"Target labels: {targets_binary}")
+                # Debugging statements
+                print(f"Output shape: {output.shape}")
+                print(f"Targets shape: {targets.shape}")
+                print(f"Targets: {targets}")
+                print(f"Predictions shape: {predictions_binary.shape}")  
+                print(f"Predictions: {predictions_binary}")
+                print(f"Target labels shape: {targets_binary.shape}") 
+                print(f"Target labels: {targets_binary}")
 
                 # Compare predictions with target labels
                 true_false = (predictions_binary == targets_binary).float()
-                # print(f"True/False comparison: {true_false}")
+                print(f"True/False comparison: {true_false}")
 
                 # Updating training metrics
                 train_sum += torch.sum(loss).cpu().data.numpy()
