@@ -50,7 +50,64 @@ def load_function(path: str):
         pdb_path.extend(out)
 
     return pdb_path
-        
+
+def dssp_label_residues(file: str):
+    """Use DSSP within BioPandas to label secondary structures elements within a PDB
+
+    PARAMS
+    ------
+    file: str
+        Path to pdb file
+
+    RETURNS
+    -------
+    pdb_dict: Dict
+        PDB secondary structure string, index, and phi, psi of the loop regions
+    """
+    # init Parser
+    _parser = PDBParser()
+
+    # Extract pdb name
+    structure_name = file.split("/")[-1].split(".pdb")[0]
+
+    # Extract information from pdb
+    structure = _parser.get_structure(structure_name, file)
+
+    # Generate DSSP Output per input
+    _dssp = DSSP(structure[0], file, dssp="mkdssp")
+
+    # Residue key list
+    residue_key = list(_dssp.keys())
+
+    # Secondary structure string
+    tmp = ''
+
+    # init lists for information
+    secondary_structure_idx = list()
+    phi_list = list()
+    psi_list = list()
+
+    # Loop through the residues and grab important information
+    for ele in residue_key:
+        # Extract out dssp information for resiude ele
+        dict_out = _dssp[ele]
+        # Generate the secondary string
+        tmp += dict_out[2]
+        # Now we check if dict_out[2] is a loop character
+        if dict_out[2] in ["T", "S", "-"]:
+            # Append SS idx for loops and phi/psi of those
+            secondary_structure_idx.append(ele[1][1])
+            phi_list.append(dict_out[4])
+            psi_list.append(dict_out[5])
+
+    # generate out pdb dict
+    pdb_dict = {
+        "ss_pdb": tmp,
+        "ss_loop_index": secondary_structure_idx,
+        "phi_loop": phi_list,
+        "psi_loop": psi_list,
+    }
+    return pdb_dict
 
 
 if __name__ == "__main__":
