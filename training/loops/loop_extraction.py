@@ -15,7 +15,9 @@ import argparse
 # import mpi
 
 # bio packages
-import biopandas as biopd
+from Bio.PDB import PDBParser
+from Bio.PDB.DSSP import DSSP
+from Bio.PDB.DSSP import dssp_dict_from_pdb_file
 
 
 ######
@@ -109,10 +111,61 @@ def dssp_label_residues(file: str):
     }
     return pdb_dict
 
+def correct_pdb(pdb_file: str, dir_path: str):
+    """Only needed to be run once. This is to fix the PDBs, so the DSSP
+    runs correctly.
+
+    PARAMS
+    ------
+    pdb_file: str
+        PDB File path, so we cal load read/write
+    dir_path: str
+        The relative path for our output file
+    """
+    # open file to read
+    open_pdb = open(pdb_file, 'r')
+    # Generate file to write to
+    file_name = pdb_file.split("/")[-1]
+    out_file = open(
+        os.path.join(dir_path, file_name),
+        'w'
+    )
+
+    # write first line
+    out_file.write("HEADER\n")
+
+    # Loop through file lines
+    for line in open_pdb:
+        if not line.startswith("REMARK"):
+            out_file.write(line)
+
+    # Close files
+    open_pdb.close()
+    out_file.close()
+
+    return 0
+
+
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Parameters for Loop Extraction and Dataset Creation.")
     p.add_argument("--path", type=str, help="Path to root direcotry of pdb directoires/files.")
+    p.add_argument("--pdb", type=str, help="Single Path to PDB for testing")
+    p.add_argument("--fix-pdb", action="store_true", help="Use this flag to convert my test data to work with DSSP")
+    p.add_argument("--fix-out-dir", type=str, help="Path to directory (make if not made already) where fixed pdbs are stored")
     args = p.parse_args()
 
-    print(load_function(path=args.path))
+    if args.fix_pdb:
+        # Generate our file list first
+        list_current = load_function(args.path)
+
+        # Check if dir exists. If not then make it
+        if not os.path.exists(args.fix_out_dir):
+            os.mkdir(args.fix_out_dir)
+
+        # Loop through and fix files
+        for pdb_file in list_current:
+            correct_pdb(pdb_file, args.fix_out_dir)
+
+    else:
+        pass
