@@ -9,11 +9,12 @@
 ####
 
 # base packages
-import os, sys
+import os, sys, time
 from collections import defaultdict
+from functools import partial
 import argparse
 import re
-# import mpi
+from multiprocessing.pool import ThreadPool
 
 # bio packages
 from Bio.PDB import PDBParser
@@ -215,7 +216,6 @@ def clean_key(key:str):
     clean_key = re.sub('[A-Za-z]', '', key)
     return int(clean_key)
 
-
 def correct_pdb(pdb_file: str, dir_path: str):
     """Only needed to be run once. This is to fix the PDBs, so the DSSP
     runs correctly.
@@ -250,15 +250,33 @@ def correct_pdb(pdb_file: str, dir_path: str):
 
     return 0
 
+def extract_all_loops(pdb: str, out_loop_dir: str):
+    """Function for passing to multithreading process
+
+    PARAMS
+    ------
+    pdb: str
+        PDB file path
+    out_loop_dir: str
+        Path to the out dir for loops
+    """
+    # Generate our out dict
+    pdb_dict = dssp_label_residues(pdb)
+    # Now generate the loop pdbs each given an input pdb
+    extract_pdb(pdb_dict, pdb, out_loop_dir)
+    return 0
+
 
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Parameters for Loop Extraction and Dataset Creation.")
     p.add_argument("--path", type=str, help="Path to root direcotry of pdb directoires/files.")
     p.add_argument("--pdb", type=str, help="Single Path to PDB for testing")
+    p.add_argument("--test", action="store_true", help="For testing with a single PDB")
     p.add_argument("--loop-out-dir", type=str, help="Path to directory (make if not made already) where loop pdbs are stored.")
     p.add_argument("--fix-pdb", action="store_true", help="Use this flag to convert my test data to work with DSSP")
     p.add_argument("--fix-out-dir", type=str, help="Path to directory (make if not made already) where fixed pdbs are stored")
+    p.add_argument("--cpu-count", type=int, default=4, help="Number of CPU counts for multithreading (Default: 4)")
     args = p.parse_args()
 
     # If the pdbs needs to be fixed then this will run. 
@@ -274,11 +292,19 @@ if __name__ == "__main__":
         for pdb_file in list_current:
             correct_pdb(pdb_file, args.fix_out_dir)
 
+    # If I am testing the script or a problem PDB then this will run
+    elif args.test:
+        extract_loops = partial(extract_all_loops, out_loop_dir = args.loop_out_dir)
+        extract_loops(args.pdb)
+
     # As long as the fix-pdb isn't True then this will run
     else:
         # Generate our file of pdbs first
         pdb_list = load_function(args.path)
+        extract_loops = partial(extract_all_loops, out_loop_dir = args.loop_out_dir)
         # generate our loops
-        for pdb in pdb_list:
-            pdb_dict = dssp_label_residues(pdb)
-            extract_pdb(pdb_dict, pdb, args.loop_out_dir)
+        with ThreadPool(args.cpu_count) as p:
+            p.map(
+                extract_loops,
+                pdb_list
+            )
