@@ -12,6 +12,7 @@
 import os, sys
 from collections import defaultdict
 import argparse
+import re
 # import mpi
 
 # bio packages
@@ -84,10 +85,18 @@ def dssp_label_residues(file: str):
     # Secondary structure string
     tmp = ''
 
+    # ss track consecutive
+    ss_track = 0
+    # ss begin
+    ss_previous = 0
+
     # init lists for information
+    ss_ss_list = list()
     secondary_structure_idx = list()
+    sub_ss_idx = list()
     phi_list = list()
     psi_list = list()
+
 
     # Loop through the residues and grab important information
     for ele in residue_key:
@@ -97,6 +106,24 @@ def dssp_label_residues(file: str):
         tmp += dict_out[2]
         # Now we check if dict_out[2] is a loop character
         if dict_out[2] in ["T", "S", "-"]:
+
+            # If this is a new loop section
+            if (ele[1][1] != ss_previous + 1) & (ss_previous != 0):
+                # If a ss is larger then 3 residues add it to sub_ss_idx
+                if ss_track >= 3:
+                    sub_ss_idx.append(ss_ss_list)
+                # Reset Track
+                ss_track = 0
+                # Now clear and set up previous 
+                ss_ss_list = list()
+
+            # Update the ss previous residue
+            ss_previous = ele[1][1]
+
+            # ss track
+            ss_track += 1
+            ss_ss_list.append(ele[1][1])
+
             # Append SS idx for loops and phi/psi of those
             secondary_structure_idx.append(ele[1][1])
             phi_list.append(dict_out[4])
@@ -105,11 +132,89 @@ def dssp_label_residues(file: str):
     # generate out pdb dict
     pdb_dict = {
         "ss_pdb": tmp,
+        "sub_ss_list": sub_ss_idx,
         "ss_loop_index": secondary_structure_idx,
         "phi_loop": phi_list,
         "psi_loop": psi_list,
     }
     return pdb_dict
+
+def extract_pdb(pdb_dict: dict, pdb_file: str, out_path: str):
+    """Extract out loop regions into separate pdb_files
+
+    PARAMS
+    ------
+    pdb_dict: Dict
+        PDB secondary structure string, index, and phi, psi of the loop regions
+    pdb_file: str
+        Path to the pdb file the pdb_dict is from
+    out_path: str
+        Path to directory that the loops pdbs will be held in
+    """
+    # open file and generate dict of information
+    file = open(pdb_file, 'r')
+    file_dict = defaultdict(list)
+    # Extract file name
+    file_name = pdb_file.split('/')[-1].split(".pdb")[0]
+    index_num = 0
+
+    # Iter through PDB file and grab lines based on residue index
+    for line in file:
+        # Skip uninportant lines
+        if (line.startswith("HEADER")) or (line.startswith("TER")) or (line.startswith("HET")):
+            pass
+        # Add everything else
+        elif line.startswith("ATOM"):
+            broken_line = re.sub("\s+", ",", line).split(",")
+            # Since the PDBs have weird collision of columns we need these if else lines
+            if ("." in broken_line[5]) & ("." in broken_line[4]):
+                key = clean_key(broken_line[3])
+            elif "." in broken_line[5]:
+                key = clean_key(broken_line[4])
+            else:
+                key = int(broken_line[5])
+            # Add the pdb lines to this particular dict 
+            file_dict[key].append(line)
+
+
+    # iter through loops
+    for loops in pdb_dict["sub_ss_list"]:
+        # Generate a pdb file
+        out_file = open(os.path.join(
+                        out_path,
+                        f"{file_name}_{index_num}.pdb"), 'w')
+
+        # write first line
+        out_file.write("HEADER\n")
+
+        # for resi in loops
+        for resi in loops:
+            out_file.write("".join(file_dict[resi]))
+
+        # close particular file
+        out_file.close()
+        # increment idnex_num
+        index_num += 1
+
+    return 0
+
+def clean_key(key:str):
+    """Clean up the key, so that it is an int
+
+    PARAMS
+    ------
+    key: str
+        Possibly an int that has a letter in it.
+
+    RETURNS
+    -------
+    clean_key: int
+        An integar instead of a str
+    """
+    # we use re to remove an letters
+    clean_key = re.sub('[A-Za-z]', '', key)
+    return int(clean_key)
+
 
 def correct_pdb(pdb_file: str, dir_path: str):
     """Only needed to be run once. This is to fix the PDBs, so the DSSP
@@ -151,10 +256,12 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Parameters for Loop Extraction and Dataset Creation.")
     p.add_argument("--path", type=str, help="Path to root direcotry of pdb directoires/files.")
     p.add_argument("--pdb", type=str, help="Single Path to PDB for testing")
+    p.add_argument("--loop-out-dir", type=str, help="Path to directory (make if not made already) where loop pdbs are stored.")
     p.add_argument("--fix-pdb", action="store_true", help="Use this flag to convert my test data to work with DSSP")
     p.add_argument("--fix-out-dir", type=str, help="Path to directory (make if not made already) where fixed pdbs are stored")
     args = p.parse_args()
 
+    # If the pdbs needs to be fixed then this will run. 
     if args.fix_pdb:
         # Generate our file list first
         list_current = load_function(args.path)
@@ -167,5 +274,11 @@ if __name__ == "__main__":
         for pdb_file in list_current:
             correct_pdb(pdb_file, args.fix_out_dir)
 
+    # As long as the fix-pdb isn't True then this will run
     else:
-        pass
+        # Generate our file of pdbs first
+        pdb_list = load_function(args.path)
+        # generate our loops
+        for pdb in pdb_list:
+            pdb_dict = dssp_label_residues(pdb)
+            extract_pdb(pdb_dict, pdb, args.loop_out_dir)
