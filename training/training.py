@@ -39,38 +39,59 @@ def main(args):
             os.makedirs(base_folder + subfolder)
 
     PATH = args.previous_checkpoint
-
     logfile = base_folder + 'log.txt'
     if not PATH:
         with open(logfile, 'w') as f:
             f.write('Epoch\tTrain\tValidation\n')
 
-    data_path = args.path_for_training_data
-    params = {
-        "LIST"    : f"{data_path}/list.csv", 
-        "VAL"     : f"{data_path}/valid_clusters.txt",
-        "TEST"    : f"{data_path}/test_clusters.txt",
-        "DIR"     : f"{data_path}",
-        "DATCUT"  : "2030-Jan-01",
-        "RESCUT"  : args.rescut, #resolution cutoff for PDBs
-        "HOMO"    : 0.70 #min seq.id. to detect homo chains
+    # Paths for l-chiral and d-chiral data
+    data_path_l_chiral = args.path_for_l_chiral_data
+    data_path_d_chiral = args.path_for_d_chiral_data
+
+    # Load l-chiral dataset
+    params_l_chiral = {
+        "LIST": f"{data_path_l_chiral}/list.csv", 
+        "VAL": f"{data_path_l_chiral}/valid_clusters.txt",
+        "TEST": f"{data_path_l_chiral}/test_clusters.txt",
+        "DIR": f"{data_path_l_chiral}",
+        "DATCUT": "2030-Jan-01",
+        "RESCUT": args.rescut,
+        "HOMO": 0.70
+    }
+
+    # Load d-chiral dataset
+    params_d_chiral = {
+        "LIST": f"{data_path_d_chiral}/list.csv", 
+        "VAL": f"{data_path_d_chiral}/valid_clusters.txt",
+        "TEST": f"{data_path_d_chiral}/test_clusters.txt",
+        "DIR": f"{data_path_d_chiral}",
+        "DATCUT": "2030-Jan-01",
+        "RESCUT": args.rescut,
+        "HOMO": 0.70
     }
 
     LOAD_PARAM = {'batch_size': 1,
                   'shuffle': True,
                   'pin_memory':False,
                   'num_workers': 4}
+    
     if args.debug:
         args.num_examples_per_epoch = 50
         args.max_protein_length = 1000
         args.batch_size = 1000
 
-    train, valid, test = build_training_clusters(params, args.debug)
+    # Build training clusters
+    train_l, valid_l, _ = build_training_clusters(params_l_chiral, args.debug)
+    train_d, valid_d, _ = build_training_clusters(params_d_chiral, args.debug)
 
-    train_set = PDB_dataset(list(train.keys()), loader_pdb, train, params)
-    train_loader = torch.utils.data.DataLoader(train_set, worker_init_fn=worker_init_fn, **LOAD_PARAM)
-    valid_set = PDB_dataset(list(valid.keys()), loader_pdb, valid, params)
-    valid_loader = torch.utils.data.DataLoader(valid_set, worker_init_fn=worker_init_fn, **LOAD_PARAM)
+    train_set_l = PDB_dataset(list(train_l.keys()), loader_pdb, train_l, params_l_chiral)
+    train_set_d = PDB_dataset(list(train_d.keys()), loader_pdb, train_d, params_d_chiral)
+    train_loader_l = DataLoader(train_set_l, worker_init_fn=worker_init_fn, **args.load_params)
+    train_loader_d = DataLoader(train_set_d, worker_init_fn=worker_init_fn, **args.load_params)
+    valid_set_l = PDB_dataset(list(valid_l.keys()), loader_pdb, valid_l, params_l_chiral)
+    valid_set_d = PDB_dataset(list(valid_d.keys()), loader_pdb, valid_d, params_d_chiral)
+    valid_loader_l = DataLoader(valid_set_l, worker_init_fn=worker_init_fn, **args.load_params)
+    valid_loader_d = DataLoader(valid_set_d, worker_init_fn=worker_init_fn, **args.load_params)
 
     model = NewComboChiral(edge_features=args.hidden_dim, 
                            hidden_dim=args.hidden_dim, 
@@ -99,90 +120,141 @@ def main(args):
         optimizer.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     with ProcessPoolExecutor(max_workers=12) as executor:
-        q = queue.Queue(maxsize=3)
-        p = queue.Queue(maxsize=3)
-        for i in range(3):
-            q.put_nowait(executor.submit(get_pdbs, train_loader, 1, args.max_protein_length, args.num_examples_per_epoch))
-            p.put_nowait(executor.submit(get_pdbs, valid_loader, 1, args.max_protein_length, args.num_examples_per_epoch))
-        pdb_dict_train = q.get().result()
-        pdb_dict_valid = p.get().result()
-       
-        dataset_train = StructureDataset(pdb_dict_train, truncate=None, max_length=args.max_protein_length) 
-        dataset_valid = StructureDataset(pdb_dict_valid, truncate=None, max_length=args.max_protein_length)
+        # Queues for l-chiral dataset
+        q_l = queue.Queue(maxsize=3)
+        p_l = queue.Queue(maxsize=3)
+    
+        # Queues for d-chiral dataset
+        q_d = queue.Queue(maxsize=3)
+        p_d = queue.Queue(maxsize=3)
         
-        loader_train = StructureLoader(dataset_train, batch_size=args.batch_size)
-        loader_valid = StructureLoader(dataset_valid, batch_size=args.batch_size)
+    # Load l-chiral data
+    for i in range(3):
+        q_l.put_nowait(executor.submit(get_pdbs, train_loader_l, 1, args.max_protein_length, args.num_examples_per_epoch))
+        p_l.put_nowait(executor.submit(get_pdbs, valid_loader_l, 1, args.max_protein_length, args.num_examples_per_epoch))
+    
+    pdb_dict_train_l = q_l.get().result()
+    pdb_dict_valid_l = p_l.get().result()
+    
+    dataset_train_l = StructureDataset(pdb_dict_train_l, truncate=None, max_length=args.max_protein_length)
+    dataset_valid_l = StructureDataset(pdb_dict_valid_l, truncate=None, max_length=args.max_protein_length)
+    
+    loader_train_l = StructureLoader(dataset_train_l, batch_size=args.batch_size)
+    loader_valid_l = StructureLoader(dataset_valid_l, batch_size=args.batch_size)
+
+    # Load d-chiral data
+    for i in range(3):
+        q_d.put_nowait(executor.submit(get_pdbs, train_loader_d, 1, args.max_protein_length, args.num_examples_per_epoch))
+        p_d.put_nowait(executor.submit(get_pdbs, valid_loader_d, 1, args.max_protein_length, args.num_examples_per_epoch))
+    
+    pdb_dict_train_d = q_d.get().result()
+    pdb_dict_valid_d = p_d.get().result()
+    
+    dataset_train_d = StructureDataset(pdb_dict_train_d, truncate=None, max_length=args.max_protein_length)
+    dataset_valid_d = StructureDataset(pdb_dict_valid_d, truncate=None, max_length=args.max_protein_length)
+    
+    loader_train_d = StructureLoader(dataset_train_d, batch_size=args.batch_size)
+    loader_valid_d = StructureLoader(dataset_valid_d, batch_size=args.batch_size)
         
-        reload_c = 0 
-        for e in range(args.num_epochs):
-            t0 = time.time()
-            e = epoch + e
-            model.train()
+    reload_c = 0 
+    for e in range(args.num_epochs):
+        t0 = time.time()
+        e = epoch + e
+        model.train()
+        
+        # Intialize metrics for training
+        train_sum_l, train_sum_d = 0.0, 0.0
+        train_acc_l, train_acc_d = 0, 0
+        train_total_samples_l, train_total_samples_d = 0, 0
+        batch_train_steps_l, batch_train_steps_d = 0, 0
+
+        if e % args.reload_data_every_n_epochs == 0:
+            if reload_c != 0:
+                # Reload l-chiral dataset
+                pdb_dict_train_l = q_l.get().result()
+                dataset_train_l = StructureDataset(pdb_dict_train_l, truncate=None, max_length=args.max_protein_length)
+                loader_train_l = StructureLoader(dataset_train_l, batch_size=args.batch_size)
+                
+                pdb_dict_valid_l = p_l.get().result()
+                dataset_valid_l = StructureDataset(pdb_dict_valid_l, truncate=None, max_length=args.max_protein_length)
+                loader_valid_l = StructureLoader(dataset_valid_l, batch_size=args.batch_size)
+                
+                q_l.put_nowait(executor.submit(get_pdbs, train_loader_l, 1, args.max_protein_length, args.num_examples_per_epoch))
+                p_l.put_nowait(executor.submit(get_pdbs, valid_loader_l, 1, args.max_protein_length, args.num_examples_per_epoch))
+                
+                # Reload d-chiral dataset
+                pdb_dict_train_d = q_d.get().result()
+                dataset_train_d = StructureDataset(pdb_dict_train_d, truncate=None, max_length=args.max_protein_length)
+                loader_train_d = StructureLoader(dataset_train_d, batch_size=args.batch_size)
+                
+                pdb_dict_valid_d = p_d.get().result()
+                dataset_valid_d = StructureDataset(pdb_dict_valid_d, truncate=None, max_length=args.max_protein_length)
+                loader_valid_d = StructureLoader(dataset_valid_d, batch_size=args.batch_size)
+                
+                q_d.put_nowait(executor.submit(get_pdbs, train_loader_d, 1, args.max_protein_length, args.num_examples_per_epoch))
+                p_d.put_nowait(executor.submit(get_pdbs, valid_loader_d, 1, args.max_protein_length, args.num_examples_per_epoch))
+                
+            reload_c += 1
+
+        # Training loop for l-chiral dataset
+        for batch in loader_train_l:
+            X, S, mask, lengths, chain_M, residue_idx, mask_self, chain_encoding_all = featurize(batch, device)
+            optimizer.zero_grad()
+
+            # Model forward pass 
+            output = model(X, S, mask, chain_M, residue_idx, chain_encoding_all) 
+
+            # Initialize targets for l-chiral (class 1)
+            batch_size = output.size(0)
+            sequence_length = output.size(1)
+            targets = torch.zeros(batch_size, sequence_length, 2, device=output.device)
+            targets[:, :, 1] = 1.0  # l-chiral class (class 1)
             
-            # Intialize metrics for training
-            train_sum = 0.0
-            train_acc = 0
-            train_total_samples = 0 
-            batch_train_steps = 0
+            # Compute loss using BCELoss
+            loss = criterion(output, targets)
+            loss.backward()
+            optimizer.step()
 
-            if e % args.reload_data_every_n_epochs == 0:
-                if reload_c != 0:
-                    pdb_dict_train = q.get().result()
-                    dataset_train = StructureDataset(pdb_dict_train, truncate=None, max_length=args.max_protein_length)
-                    loader_train = StructureLoader(dataset_train, batch_size=args.batch_size)
-                    pdb_dict_valid = p.get().result()
-                    dataset_valid = StructureDataset(pdb_dict_valid, truncate=None, max_length=args.max_protein_length)
-                    loader_valid = StructureLoader(dataset_valid, batch_size=args.batch_size)
-                    q.put_nowait(executor.submit(get_pdbs, train_loader, 1, args.max_protein_length, args.num_examples_per_epoch))
-                    p.put_nowait(executor.submit(get_pdbs, valid_loader, 1, args.max_protein_length, args.num_examples_per_epoch))
-                reload_c += 1
-            for  batch in loader_train:
-                X, S, mask, lengths, chain_M, residue_idx, mask_self, chain_encoding_all = featurize(batch, device)
-                optimizer.zero_grad()
+            # Get binary class predictions
+            predictions_binary = torch.argmax(output, -1)
+            targets_binary = torch.argmax(targets, -1)
 
-                # Model forward pass 
-                output = model(X, S, mask, chain_M, residue_idx, chain_encoding_all) 
+            # Update metrics
+            true_false = (predictions_binary == targets_binary).float()
+            train_sum_l += torch.sum(loss).cpu().data.numpy()
+            train_acc_l += torch.sum(true_false).cpu().data.numpy()
+            train_total_samples_l += predictions_binary.numel()
+            batch_train_steps_l += 1
 
-                # Initialize targets for l-chiral (class 1)
-                batch_size = output.size(0)
-                sequence_length = output.size(1)
+        # Training loop for d-chiral dataset
+        for batch in loader_train_d:
+            X, S, mask, lengths, chain_M, residue_idx, mask_self, chain_encoding_all = featurize(batch, device)
+            optimizer.zero_grad()
 
-                # Create a tensor of zeros
-                targets = torch.zeros(batch_size, sequence_length, 2, device=output.device)
+            # Model forward pass 
+            output = model(X, S, mask, chain_M, residue_idx, chain_encoding_all) 
 
-                # Set the second channel to 0 for l-chiral (class 0)
-                targets[:, :, 1] = 1.0 # Set class 1 (l-chiral) to 1
-                    
-                # Compute loss using BCELoss
-                loss = criterion(output, targets) # Calculates the binary cross-entropy loss between model output and targets 
-                loss.backward() # Computes the gradients of the loss
-                optimizer.step() # Updates the model parameters based on the gradients
+            # Initialize targets for d-chiral (class 0)
+            batch_size = output.size(0)
+            sequence_length = output.size(1)
+            targets = torch.zeros(batch_size, sequence_length, 2, device=output.device)
+            targets[:, :, 0] = 1.0  # d-chiral class (class 0)
 
-                # Get binary class predictions
-                predictions_binary = torch.argmax(output, -1)
+            # Compute loss using BCELoss
+            loss = criterion(output, targets)
+            loss.backward()
+            optimizer.step()
 
-                # Convert targets to binary labels
-                targets_binary = torch.argmax(targets, -1)
+            # Get binary class predictions
+            predictions_binary = torch.argmax(output, -1)
+            targets_binary = torch.argmax(targets, -1)
 
-                # Debugging statements
-                print(f"Output shape: {output.shape}")
-                print(f"Targets shape: {targets.shape}")
-                print(f"Targets: {targets}")
-                print(f"Predictions shape: {predictions_binary.shape}")  
-                print(f"Predictions: {predictions_binary}")
-                print(f"Target labels shape: {targets_binary.shape}") 
-                print(f"Target labels: {targets_binary}")
-
-                # Compare predictions with target labels
-                true_false = (predictions_binary == targets_binary).float()
-                print(f"True/False comparison: {true_false}")
-
-                # Updating training metrics
-                train_sum += torch.sum(loss).cpu().data.numpy()
-                train_acc += torch.sum(true_false).cpu().data.numpy()
-                train_total_samples += predictions_binary.numel()
-                batch_train_steps += 1
-                total_step += 1
+            # Update metrics
+            true_false = (predictions_binary == targets_binary).float()
+            train_sum_d += torch.sum(loss).cpu().data.numpy()
+            train_acc_d += torch.sum(true_false).cpu().data.numpy()
+            train_total_samples_d += predictions_binary.numel()
+            batch_train_steps_d += 1
 
             model.eval()
             with torch.no_grad():
