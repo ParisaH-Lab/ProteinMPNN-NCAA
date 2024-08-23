@@ -41,8 +41,8 @@ class NewComboChiral(nn.Module):
                                                out1=out1)
 
         # Load pretrained weights
-        vanilla_train_weights = torch.load("/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/vanilla_sample_training_output/model_weights/epoch200_step564.pt", map_location=torch.device('cpu'))
-        dchiral_train_weights = torch.load("/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/mirrored_sample_training_output/model_weights/epoch200_step606.pt", map_location=torch.device('cpu'))
+        vanilla_train_weights = torch.load("/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/outputs/vanilla_sample_training_output/model_weights/epoch200_step564.pt", map_location=torch.device('cpu'))
+        dchiral_train_weights = torch.load("/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/outputs/mirrored_sample_training_output/model_weights/epoch200_step606.pt", map_location=torch.device('cpu'))
         
         # Extract model state dictionaries
         vanilla_model_state_dict = vanilla_train_weights['model_state_dict']
