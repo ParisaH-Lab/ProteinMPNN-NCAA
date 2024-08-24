@@ -224,8 +224,6 @@ class PDB_dataset(torch.utils.data.Dataset):
         out = self.loader(self.train_dict[ID][sel_idx], self.params)
         return out
 
-
-
 def loader_pdb(item,params):
 
     pdbid,chid = item[0].split('_')
