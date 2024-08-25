@@ -140,7 +140,7 @@ def dssp_label_residues(file: str):
     }
     return pdb_dict
 
-def extract_pdb(pdb_dict: dict, pdb_file: str, out_path: str):
+def extract_pdb(pdb_dict: dict, pdb_file: str, out_path: str, out_path_dir: str):
     """Extract out loop regions into separate pdb_files
 
     PARAMS
@@ -151,6 +151,8 @@ def extract_pdb(pdb_dict: dict, pdb_file: str, out_path: str):
         Path to the pdb file the pdb_dict is from
     out_path: str
         Path to directory that the loops pdbs will be held in
+    out_path_dir: str
+        Path to list.csv, valid, test.txt, chiral_out.csv
     """
     # open file and generate dict of information
     file = open(pdb_file, 'r')
@@ -180,10 +182,11 @@ def extract_pdb(pdb_dict: dict, pdb_file: str, out_path: str):
 
     # iter through loops
     for loops in pdb_dict["sub_ss_list"]:
+        pdb_file_name = f"{file_name}_{index_num}"
         # Generate a pdb file
         out_file = open(os.path.join(
                         out_path,
-                        f"{file_name}_{index_num}.pdb"), 'w')
+                        f"{pdb_file_name}.pdb"), 'w')
 
         # write first line
         out_file.write("HEADER\n")
@@ -196,6 +199,15 @@ def extract_pdb(pdb_dict: dict, pdb_file: str, out_path: str):
         out_file.close()
         # increment idnex_num
         index_num += 1
+        # Generate supplementary files
+        generate_supplementary_files(
+            out_path = out_path_dir,
+            seq = pdb_dict["seq"],
+            chiral_seq = pdb_dict["chiral_out"],
+            file_name = pdb_file_name,
+            hash = str(random.randint(100_000, 999_999)),
+            cluster = str(random.randint(20_000, 30_000)),
+        )
 
     return 0
 
@@ -249,6 +261,80 @@ def correct_pdb(pdb_file: str, dir_path: str):
     out_file.close()
 
     return 0
+
+def generate_supplementary_files(
+    out_path: str,
+    seq: str,
+    chiral_seq: str,
+    file_name: str,
+    hash: int,
+    cluster: int,
+    ):
+    """Generate MPNN supplementary list.csv, valid, and test .txt files
+    Also, for our datasets chiral_out.csv
+
+    PARAMS
+    ------
+    out_path: str
+        The path to the output directory
+    seq: str
+        Sequence of the loop
+    chiral_seq: str
+        Sequence of chirality per residue
+    file_name: str
+        Name of the output file for the loop
+    hash: int
+        Hash that will be associated with the loop (6digit hash)
+    cluster: int
+        Cluster that will be associated with this loop (since we are not using seqid=30%)
+    """
+    # generate data information that is need
+    date = "2024-08-25"
+    resolution = 1.0
+
+    # Now check if list/valid/test are generated (if one generated then all made)
+    if os.path.exists(os.path.join(out_path, "list.csv")):
+        # Append to the file
+        list_out = open(os.path.join(out_path, "list.csv"), 'a')
+        valid_out = open(os.path.join(out_path, "valid_clusters.txt"), 'a')
+        test_out = open(os.path.join(out_path, "test_clusters.txt"), 'a')
+        chiral_out = open(os.path.join(out_path, "chiral_out.csv"), 'a')
+
+    else:
+        # Create the file
+        list_out = open(os.path.join(out_path, "list.csv"), 'w')
+        valid_out = open(os.path.join(out_path, "valid_clusters.txt"), 'w')
+        test_out = open(os.path.join(out_path, "test_clusters.txt"), 'w')
+        chiral_out = open(os.path.join(out_path, "chiral_out.csv"), 'w')
+
+    # generate a list of important information
+    list_line = f"{file_name},{resolution},{date},{hash},{cluster},{seq}\n"
+    valid_line = f"{cluster}\n"
+    test_line = f"{cluster}\n"
+    chiral_line = f"{pdb_file},{chiral_seq}\n"
+
+    # Write to the files
+    litst_out.write(list_line)
+    chiral_out.write(chiral_line)
+
+    # Determine if test or valid
+    value = random.randint(1, 100)
+    # This means it is a test or valid line
+    if value <= 20:
+        # These determine if it is valid or test
+        if value <= 10:
+            valid_out.write(valid_line)
+        else:
+            test_out.write(test_line)
+
+    # Close all files
+    list_out.close()
+    valid_out.close()
+    test_out.close() 
+    chiral_out.close()
+
+    return 0
+
 
 def extract_all_loops(pdb: str, out_loop_dir: str):
     """Function for passing to multithreading process
