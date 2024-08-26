@@ -9,7 +9,7 @@
 ####
 
 # base packages
-import os, sys, time
+import os, sys, time, random
 from collections import defaultdict
 from functools import partial
 import argparse
@@ -163,7 +163,7 @@ def dssp_label_residues(file: str):
     }
     return pdb_dict
 
-def extract_pdb(pdb_dict: dict, pdb_file: str, out_path: str, out_path_dir: str):
+def extract_pdb(pdb_dict: dict, pdb_file: str, out_path: str, out_supp_dir: str):
     """Extract out loop regions into separate pdb_files
 
     PARAMS
@@ -174,7 +174,7 @@ def extract_pdb(pdb_dict: dict, pdb_file: str, out_path: str, out_path_dir: str)
         Path to the pdb file the pdb_dict is from
     out_path: str
         Path to directory that the loops pdbs will be held in
-    out_path_dir: str
+    out_supp_dir: str
         Path to list.csv, valid, test.txt, chiral_out.csv
     """
     # open file and generate dict of information
@@ -204,8 +204,8 @@ def extract_pdb(pdb_dict: dict, pdb_file: str, out_path: str, out_path_dir: str)
 
 
     # iter through loops
-    for loops in pdb_dict["sub_ss_list"]:
-        pdb_file_name = f"{file_name}_{index_num}"
+    for num, loops in enumerate(pdb_dict["sub_ss_list"]):
+        pdb_file_name = f"{file_name}_{num}"
         # Generate a pdb file
         out_file = open(os.path.join(
                         out_path,
@@ -220,13 +220,12 @@ def extract_pdb(pdb_dict: dict, pdb_file: str, out_path: str, out_path_dir: str)
 
         # close particular file
         out_file.close()
-        # increment idnex_num
-        index_num += 1
+
         # Generate supplementary files
         generate_supplementary_files(
-            out_path = out_path_dir,
-            seq = pdb_dict["seq"],
-            chiral_seq = pdb_dict["chiral_out"],
+            out_path = out_supp_dir,
+            seq = "".join(pdb_dict["amino_acid_list"][num]),
+            chiral_seq = "".join(pdb_dict["chiral_out"][num]),
             file_name = pdb_file_name,
             hash = str(random.randint(100_000, 999_999)),
             cluster = str(random.randint(20_000, 30_000)),
@@ -330,14 +329,18 @@ def generate_supplementary_files(
         test_out = open(os.path.join(out_path, "test_clusters.txt"), 'w')
         chiral_out = open(os.path.join(out_path, "chiral_out.csv"), 'w')
 
+        # Write out HEADER
+        list_out.write("CHAINID,DEPOSITION,RESOLUTION,HASH,CLUSTER,SEQUENCE\n")
+        chiral_out.write("CHAINID,CHIRALSEQ\n")
+
     # generate a list of important information
     list_line = f"{file_name},{resolution},{date},{hash},{cluster},{seq}\n"
     valid_line = f"{cluster}\n"
     test_line = f"{cluster}\n"
-    chiral_line = f"{pdb_file},{chiral_seq}\n"
+    chiral_line = f"{file_name},{chiral_seq}\n"
 
     # Write to the files
-    litst_out.write(list_line)
+    list_out.write(list_line)
     chiral_out.write(chiral_line)
 
     # Determine if test or valid
@@ -359,7 +362,7 @@ def generate_supplementary_files(
     return 0
 
 
-def extract_all_loops(pdb: str, out_loop_dir: str, out_path_dir: str):
+def extract_all_loops(pdb: str, out_loop_dir: str, out_supp_dir: str):
     """Function for passing to multithreading process
 
     PARAMS
@@ -368,13 +371,13 @@ def extract_all_loops(pdb: str, out_loop_dir: str, out_path_dir: str):
         PDB file path
     out_loop_dir: str
         Path to the out dir for loops
-    out_path_dir: str
+    out_supp_dir: str
         Path to out dir for supplementary files
     """
     # Generate our out dict
     pdb_dict = dssp_label_residues(pdb)
     # Now generate the loop pdbs each given an input pdb
-    extract_pdb(pdb_dict, pdb, out_loop_dir, out_path_dir)
+    extract_pdb(pdb_dict, pdb, out_loop_dir, out_supp_dir)
     return 0
 
 
@@ -406,14 +409,14 @@ if __name__ == "__main__":
 
     # If I am testing the script or a problem PDB then this will run
     elif args.test:
-        extract_loops = partial(extract_all_loops, out_loop_dir = args.loop_out_dir, out_path_dir = "./")
+        extract_loops = partial(extract_all_loops, out_loop_dir = args.loop_out_dir, out_supp_dir = "./")
         extract_loops(args.pdb)
 
     # As long as the fix-pdb isn't True then this will run
     else:
         # Generate our file of pdbs first
         pdb_list = load_function(args.path)
-        extract_loops = partial(extract_all_loops, out_loop_dir = args.loop_out_dir, out_path_dir = args.supplementary_out_path)
+        extract_loops = partial(extract_all_loops, out_loop_dir = args.loop_out_dir, out_supp_dir = args.supplementary_out_path)
         # generate our loops
         with ThreadPool(args.cpu_count) as p:
             p.map(
