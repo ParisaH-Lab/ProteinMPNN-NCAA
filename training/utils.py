@@ -209,11 +209,12 @@ def get_pdbs(data_loader, repeat=1, max_length=10000, num_units=1000000):
 
 
 class PDB_dataset(torch.utils.data.Dataset):
-    def __init__(self, IDs, loader, train_dict, params):
+    def __init__(self, IDs, loader, train_dict, params, chiral_dict):
         self.IDs = IDs
         self.train_dict = train_dict
         self.loader = loader
         self.params = params
+        self.chiral_dict = chiral_dict
 
     def __len__(self):
         return len(self.IDs)
@@ -221,12 +222,16 @@ class PDB_dataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         ID = self.IDs[index]
         sel_idx = np.random.randint(0, len(self.train_dict[ID]))
-        out = self.loader(self.train_dict[ID][sel_idx], self.params)
+        out = self.loader(self.train_dict[ID][sel_idx], self.params, self.chiral_dict)
         return out
 
 
 
-def loader_pdb(item,params):
+def loader_pdb(item,params, chiral_dict: dict): # This means PDB_dataset needs this passed as well
+    """
+    New addition was chiral_dict which will be used to determine the chirality of
+    each residue
+    """
 
     pdbid,chid = item[0].split('_')
     PREFIX = "%s/pdb/%s/%s"%(params['DIR'],pdbid[1:3],pdbid)
@@ -308,6 +313,24 @@ def loader_pdb(item,params):
             'idx'    : torch.cat(idx,dim=0),
             'masked' : torch.Tensor(masked).int(),
             'label'  : item[0]}
+
+
+def chiral_label(pdb_info: str, chiral_dict: dict):
+    """Helper function to load in the per residue chiral labels
+
+    PARAMS
+    ------
+    pdb_info: str
+        Pdb file name
+    chiral_dict: dict[str: str]
+        Pdb_info: chiral sequence
+
+    RETURNS
+    -------
+    chiral_label: Tensor(N, 2)
+        A tensor with N number of residue entries and indicating it is a L 0 or D 1
+    """
+    pass
 
 
 
