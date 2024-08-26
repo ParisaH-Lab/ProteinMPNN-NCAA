@@ -15,11 +15,13 @@ from functools import partial
 import argparse
 import re
 from multiprocessing.pool import ThreadPool
+import warnings
 
 # bio packages
 from Bio.PDB import PDBParser
 from Bio.PDB.DSSP import DSSP
 from Bio.PDB.DSSP import dssp_dict_from_pdb_file
+from Bio import BiopythonWarning
 
 
 ######
@@ -148,8 +150,8 @@ def dssp_label_residues(file: str):
 
             # Append SS idx for loops and phi/psi of those
             secondary_structure_idx.append(ele[1][1])
-            phi_list.append(dict_out[4])
-            psi_list.append(dict_out[5])
+            phi_list.append(str(dict_out[4]))
+            psi_list.append(str(dict_out[5]))
 
     # generate out pdb dict
     pdb_dict = {
@@ -262,6 +264,8 @@ def extract_pdb(pdb_dict: dict, pdb_file: str, out_path: str, out_supp_dir: str)
             file_name = pdb_file_name,
             hash = str(random.randint(100_000, 999_999)),
             cluster = str(random.randint(20_000, 30_000)),
+            phi_list = pdb_dict["phi_loop"],
+            psi_list = pdb_dict["psi_loop"],
         )
 
         # Generate supllementary mirror files
@@ -334,6 +338,8 @@ def generate_supplementary_files(
     file_name: str,
     hash: int,
     cluster: int,
+    phi_list: list = None,
+    psi_list: list = None,
     ):
     """Generate MPNN supplementary list.csv, valid, and test .txt files
     Also, for our datasets chiral_out.csv
@@ -352,6 +358,10 @@ def generate_supplementary_files(
         Hash that will be associated with the loop (6digit hash)
     cluster: int
         Cluster that will be associated with this loop (since we are not using seqid=30%)
+    phi_list: list
+        List of original non-mirror phi values
+    psi_list: list
+        List of original non-mirrror psi values
     """
     # generate data information that is need
     date = "2024-08-25"
@@ -364,6 +374,7 @@ def generate_supplementary_files(
         valid_out = open(os.path.join(out_path, "valid_clusters.txt"), 'a')
         test_out = open(os.path.join(out_path, "test_clusters.txt"), 'a')
         chiral_out = open(os.path.join(out_path, "chiral_out.csv"), 'a')
+        metadata_out = open(os.path.join(out_path, "metadata.csv"), 'a')
 
     else:
         # Create the file
@@ -371,16 +382,20 @@ def generate_supplementary_files(
         valid_out = open(os.path.join(out_path, "valid_clusters.txt"), 'w')
         test_out = open(os.path.join(out_path, "test_clusters.txt"), 'w')
         chiral_out = open(os.path.join(out_path, "chiral_out.csv"), 'w')
+        metadata_out = open(os.path.join(out_path, "metadata.csv"), 'w')
 
         # Write out HEADER
         list_out.write("CHAINID,DEPOSITION,RESOLUTION,HASH,CLUSTER,SEQUENCE\n")
         chiral_out.write("CHAINID,CHIRALSEQ\n")
+        metadata_out.write("CHAINID,PHI,PSI\n")
 
     # generate a list of important information
     list_line = f"{file_name},{date},{resolution},{hash},{cluster},{seq}\n"
     valid_line = f"{cluster}\n"
     test_line = f"{cluster}\n"
     chiral_line = f"{file_name},{chiral_seq}\n"
+    if (phi_list != None) or (psi_list != None):
+        metadata_out.write(f"{file_name},{'_'.join(phi_list)},{'_'.join(psi_list)}\n")
 
     # Write to the files
     list_out.write(list_line)
@@ -401,6 +416,7 @@ def generate_supplementary_files(
     valid_out.close()
     test_out.close() 
     chiral_out.close()
+    metadata_out.close()
 
     return 0
 
@@ -419,8 +435,22 @@ def extract_all_loops(pdb: str, out_loop_dir: str, out_supp_dir: str):
     """
     # Generate our out dict
     pdb_dict = dssp_label_residues(pdb)
+    # try:
     # Now generate the loop pdbs each given an input pdb
     extract_pdb(pdb_dict, pdb, out_loop_dir, out_supp_dir)
+    # except:
+    #     # print the problem file
+    #     print("---------------------")
+    #     print("---------------------")
+    #     print("---------------------")
+    #     print("---------------------")
+    #     print("---------------------")
+    #     print(f"This file {pdb} gave an error!!!!")
+    #     print("---------------------")
+    #     print("---------------------")
+    #     print("---------------------")
+    #     print("---------------------")
+    #     print("---------------------")
     return 0
 
 
