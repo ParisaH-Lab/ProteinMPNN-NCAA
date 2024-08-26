@@ -163,6 +163,21 @@ def dssp_label_residues(file: str):
     }
     return pdb_dict
 
+def flip_sign(match):
+    """Convert match object from re and flip sign
+
+    PARAMS
+    ------
+    match: re.object
+        Matched pattern should be string that is actually a float value
+
+    RETURNS
+    -------
+    float
+    """
+    value = float(match.group(2))
+    return f" {-value:.3f}"
+
 def extract_pdb(pdb_dict: dict, pdb_file: str, out_path: str, out_supp_dir: str):
     """Extract out loop regions into separate pdb_files
 
@@ -205,28 +220,56 @@ def extract_pdb(pdb_dict: dict, pdb_file: str, out_path: str, out_supp_dir: str)
 
     # iter through loops
     for num, loops in enumerate(pdb_dict["sub_ss_list"]):
+        # Standar file
         pdb_file_name = f"{file_name}_{num}"
+        pdb_file_mirror_name = f"{file_name}mirror_{num}"
         # Generate a pdb file
         out_file = open(os.path.join(
                         out_path,
                         f"{pdb_file_name}.pdb"), 'w')
+        out_mirror_file = open(os.path.join(
+                        out_path,
+                        f"{pdb_file_mirror_name}.pdb"), 'w')
 
         # write first line
         out_file.write("HEADER\n")
+        out_mirror_file.write("HEADER\n")
 
         # for resi in loops
         for resi in loops:
             out_file.write("".join(file_dict[resi]))
 
+            # Regex pattern for capturing the x dimesnion coords
+            pattern = r"([\s|A-Z]\d+\s+)(\d+\.\d+)"
+            # write by flipping the sign of x
+            out_mirror_file.write(
+                "".join(
+                    [
+                        re.sub(pattern, lambda m: m.group(1) + flip_sign(m), line) for line in file_dict[resi]
+                    ]
+                )
+            )
+
         # close particular file
         out_file.close()
+        out_mirror_file.close()
 
-        # Generate supplementary files
+        # Generate supplementary standard files
         generate_supplementary_files(
             out_path = out_supp_dir,
             seq = "".join(pdb_dict["amino_acid_list"][num]),
             chiral_seq = "".join(pdb_dict["chiral_out"][num]),
             file_name = pdb_file_name,
+            hash = str(random.randint(100_000, 999_999)),
+            cluster = str(random.randint(20_000, 30_000)),
+        )
+
+        # Generate supllementary mirror files
+        generate_supplementary_files(
+            out_path = out_supp_dir,
+            seq = "".join(pdb_dict["amino_acid_list"][num]),
+            chiral_seq = "".join(["L" if i == "D" else "D" for i in pdb_dict["chiral_out"][num]]),
+            file_name = pdb_file_mirror_name,
             hash = str(random.randint(100_000, 999_999)),
             cluster = str(random.randint(20_000, 30_000)),
         )
@@ -334,7 +377,7 @@ def generate_supplementary_files(
         chiral_out.write("CHAINID,CHIRALSEQ\n")
 
     # generate a list of important information
-    list_line = f"{file_name},{resolution},{date},{hash},{cluster},{seq}\n"
+    list_line = f"{file_name},{date},{resolution},{hash},{cluster},{seq}\n"
     valid_line = f"{cluster}\n"
     test_line = f"{cluster}\n"
     chiral_line = f"{file_name},{chiral_seq}\n"
