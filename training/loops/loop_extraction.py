@@ -66,7 +66,13 @@ def dssp_label_residues(file: str):
     RETURNS
     -------
     pdb_dict: Dict
-        PDB secondary structure string, index, and phi, psi of the loop regions
+        loop region infromation
+        - PDB secondary structure (ss) string
+        - Chiral label for loop
+        - List of ss lists for pdb extraction
+        - index of ss
+        - phi
+        - psi 
     """
     # init Parser
     _parser = PDBParser()
@@ -93,6 +99,10 @@ def dssp_label_residues(file: str):
 
     # init lists for information
     ss_ss_list = list()
+    aa_sub_list = list()
+    aa_list = list()
+    chiral_out_list = list()
+    chiral_sub_list = list()
     secondary_structure_idx = list()
     sub_ss_idx = list()
     phi_list = list()
@@ -113,10 +123,14 @@ def dssp_label_residues(file: str):
                 # If a ss is larger then 3 residues add it to sub_ss_idx
                 if ss_track >= 3:
                     sub_ss_idx.append(ss_ss_list)
+                    chiral_out_list.append(chiral_sub_list)
+                    aa_list.append(aa_sub_list)
                 # Reset Track
                 ss_track = 0
                 # Now clear and set up previous 
                 ss_ss_list = list()
+                chiral_sub_list = list()
+                aa_sub_list = list()
 
             # Update the ss previous residue
             ss_previous = ele[1][1]
@@ -124,6 +138,13 @@ def dssp_label_residues(file: str):
             # ss track
             ss_track += 1
             ss_ss_list.append(ele[1][1])
+            aa_sub_list.append(dict_out[1]) # All upper still here (since model is all upper still)
+
+            # Chiral determine labels
+            if dict_out[4] > 0.0:
+                chiral_sub_list.append('D')
+            else:
+                chiral_sub_list.append('L')
 
             # Append SS idx for loops and phi/psi of those
             secondary_structure_idx.append(ele[1][1])
@@ -134,6 +155,8 @@ def dssp_label_residues(file: str):
     pdb_dict = {
         "ss_pdb": tmp,
         "sub_ss_list": sub_ss_idx,
+        "amino_acid_list": aa_list,
+        "chiral_out": chiral_out_list,
         "ss_loop_index": secondary_structure_idx,
         "phi_loop": phi_list,
         "psi_loop": psi_list,
@@ -336,7 +359,7 @@ def generate_supplementary_files(
     return 0
 
 
-def extract_all_loops(pdb: str, out_loop_dir: str):
+def extract_all_loops(pdb: str, out_loop_dir: str, out_path_dir: str):
     """Function for passing to multithreading process
 
     PARAMS
@@ -345,11 +368,13 @@ def extract_all_loops(pdb: str, out_loop_dir: str):
         PDB file path
     out_loop_dir: str
         Path to the out dir for loops
+    out_path_dir: str
+        Path to out dir for supplementary files
     """
     # Generate our out dict
     pdb_dict = dssp_label_residues(pdb)
     # Now generate the loop pdbs each given an input pdb
-    extract_pdb(pdb_dict, pdb, out_loop_dir)
+    extract_pdb(pdb_dict, pdb, out_loop_dir, out_path_dir)
     return 0
 
 
@@ -360,6 +385,7 @@ if __name__ == "__main__":
     p.add_argument("--pdb", type=str, help="Single Path to PDB for testing")
     p.add_argument("--test", action="store_true", help="For testing with a single PDB")
     p.add_argument("--loop-out-dir", type=str, help="Path to directory (make if not made already) where loop pdbs are stored.")
+    p.add_argument("--supplementary-out-path", type=str, help="Path to directory for supplementary files")
     p.add_argument("--fix-pdb", action="store_true", help="Use this flag to convert my test data to work with DSSP")
     p.add_argument("--fix-out-dir", type=str, help="Path to directory (make if not made already) where fixed pdbs are stored")
     p.add_argument("--cpu-count", type=int, default=4, help="Number of CPU counts for multithreading (Default: 4)")
@@ -380,14 +406,14 @@ if __name__ == "__main__":
 
     # If I am testing the script or a problem PDB then this will run
     elif args.test:
-        extract_loops = partial(extract_all_loops, out_loop_dir = args.loop_out_dir)
+        extract_loops = partial(extract_all_loops, out_loop_dir = args.loop_out_dir, out_path_dir = "./")
         extract_loops(args.pdb)
 
     # As long as the fix-pdb isn't True then this will run
     else:
         # Generate our file of pdbs first
         pdb_list = load_function(args.path)
-        extract_loops = partial(extract_all_loops, out_loop_dir = args.loop_out_dir)
+        extract_loops = partial(extract_all_loops, out_loop_dir = args.loop_out_dir, out_path_dir = args.supplementary_out_path)
         # generate our loops
         with ThreadPool(args.cpu_count) as p:
             p.map(
