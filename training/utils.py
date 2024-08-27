@@ -154,11 +154,22 @@ def get_pdbs(data_loader, repeat=1, max_length=10000, num_units=1000000):
                 coords_dict = {}
                 mask_list = []
                 visible_list = []
+
+                ##### THIS IS ADDED BY ME FOR TESTING
+                print('t dict weird thing:', t)
+
                 if len(list(np.unique(t['idx']))) < 352:
+
+                    ##### THIS IS ADDED BY ME FOR TESTING
+                    print('t index:', t["idx"])
+
                     for idx in list(np.unique(t['idx'])):
                         letter = chain_alphabet[idx]
                         res = np.argwhere(t['idx']==idx)
                         initial_sequence= "".join(list(np.array(list(t['seq']))[res][0,]))
+                        print(t['seq'])
+                        print(t['chiral'])
+                        input("PRESS <ENTER>")
                         if initial_sequence[-6:] == "HHHHHH":
                             res = res[:,:-6]
                         if initial_sequence[0:6] == "HHHHHH":
@@ -222,10 +233,47 @@ class PDB_dataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         ID = self.IDs[index]
         sel_idx = np.random.randint(0, len(self.train_dict[ID]))
+        print('dict:', self.train_dict[ID])
+        print('sel_idx:', sel_idx)
+        print('dict with sel_idx:', self.train_dict[ID][sel_idx])
         out = self.loader(self.train_dict[ID][sel_idx], self.params, self.chiral_dict)
         return out
 
+def chiral_loader(params: dict):
+    """Generate a dictionary of values that are associated with a residues chirality 
+    for a given pdb key
 
+    PARAMS
+    -------
+    params: dict
+        Contains the locations of all of the information that is needed
+
+    RETURNS
+    -------
+    chiral_dict: dict
+        PDB_NAME: Tensor (N, 2)
+    """
+    # load the file that is necessary
+    chiral_file = open(params["CHIRAL"], 'r')
+    # init chiral dict
+    chiral_dict = dict()
+
+    # loop through all of the entries within the file
+    next(chiral_file)
+    for line in chiral_file:
+        # Split the line on the comma and remove the newline character
+        line_split = line.strip("\n").split(",")
+        # Grab the key (PDB NAME)
+        key = line_split[0]
+        # Grab the chiral sequence
+        values = torch.tensor(
+            [
+                0 if x=="D" else 1 for x in line_split[1]
+            ]
+        )
+        chiral_dict[key] = values
+
+    return chiral_dict
 
 def loader_pdb(item,params, chiral_dict: dict): # This means PDB_dataset needs this passed as well
     """
@@ -257,7 +305,8 @@ def loader_pdb(item,params, chiral_dict: dict): # This means PDB_dataset needs t
                 'xyz'    : chain['xyz'],
                 'idx'    : torch.zeros(L).int(),
                 'masked' : torch.Tensor([0]).int(),
-                'label'  : item[0]}
+                'label'  : item[0],
+                'chiral' : chiral_dict[item[0]]}
 
     # randomly pick one assembly from candidates
     asmb_i = random.sample(list(asmb_candidates), 1)
@@ -312,28 +361,8 @@ def loader_pdb(item,params, chiral_dict: dict): # This means PDB_dataset needs t
             'xyz'    : torch.cat(xyz,dim=0),
             'idx'    : torch.cat(idx,dim=0),
             'masked' : torch.Tensor(masked).int(),
-            'label'  : item[0]}
-
-
-def chiral_label(pdb_info: str, chiral_dict: dict):
-    """Helper function to load in the per residue chiral labels
-
-    PARAMS
-    ------
-    pdb_info: str
-        Pdb file name
-    chiral_dict: dict[str: str]
-        Pdb_info: chiral sequence
-
-    RETURNS
-    -------
-    chiral_label: Tensor(N, 2)
-        A tensor with N number of residue entries and indicating it is a L 0 or D 1
-    """
-    pass
-
-
-
+            'label'  : item[0],
+            'chiral' : chiral_dict[item[0]]}
 
 def build_training_clusters(params, debug):
     val_ids = set([int(l) for l in open(params['VAL']).readlines()])

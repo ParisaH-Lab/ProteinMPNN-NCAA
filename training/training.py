@@ -17,7 +17,7 @@ import queue
 import copy
 import torch.nn as nn
 import torch.nn.functional as F
-from utils import worker_init_fn, get_pdbs, loader_pdb, build_training_clusters, PDB_dataset, StructureDataset, StructureLoader
+from utils import worker_init_fn, get_pdbs, loader_pdb, build_training_clusters, PDB_dataset, StructureDataset, StructureLoader, chiral_loader
 from model_utils import featurize, get_std_opt
 from new_combo_module import NewComboChiral
 
@@ -53,7 +53,8 @@ def main(args):
         "DIR"     : f"{data_path}",
         "DATCUT"  : "2030-Jan-01",
         "RESCUT"  : args.rescut, #resolution cutoff for PDBs
-        "HOMO"    : 0.70 #min seq.id. to detect homo chains
+        "HOMO"    : 0.70, #min seq.id. to detect homo chains
+        "CHIRAL"  : f"{data_path}/chiral_out.csv",
     }
 
     LOAD_PARAM = {'batch_size': 1,
@@ -65,13 +66,16 @@ def main(args):
         args.max_protein_length = 1000
         args.batch_size = 1000
 
+    # Add in a chiral portion to the dataloader
+    chiral_dict = chiral_loader(params)
+
     train, valid, test = build_training_clusters(params, args.debug)
 
     train_set = PDB_dataset(list(train.keys()), loader_pdb, train, params, chiral_dict)
     train_loader = torch.utils.data.DataLoader(train_set, worker_init_fn=worker_init_fn, **LOAD_PARAM)
     valid_set = PDB_dataset(list(valid.keys()), loader_pdb, valid, params, chiral_dict)
     valid_loader = torch.utils.data.DataLoader(valid_set, worker_init_fn=worker_init_fn, **LOAD_PARAM)
-
+    
     model = NewComboChiral(edge_features=args.hidden_dim, 
                            hidden_dim=args.hidden_dim, 
                            num_encoder_layers=args.num_encoder_layers, 
@@ -234,8 +238,8 @@ def main(args):
             validation_accuracy = validation_acc / validation_total_samples
             
             train_loss_formatted = np.format_float_positional(np.float32(train_loss), unique=False, precision=6)
-            train_accuracy_formatted = np.format_float_positional(np.float32(validation_loss), unique=False, precision=6)
-            validation_loss_formatted = np.format_float_positional(np.float32(train_accuracy), unique=False, precision=6)
+            train_accuracy_formatted = np.format_float_positional(np.float32(train_accuracy), unique=False, precision=6)
+            validation_loss_formatted = np.format_float_positional(np.float32(validation_loss), unique=False, precision=6)
             validation_accuracy_formatted = np.format_float_positional(np.float32(validation_accuracy), unique=False, precision=6)
     
             t1 = time.time()
