@@ -41,24 +41,25 @@ class NewComboChiral(nn.Module):
                                                out1=out1)
 
         # Load pretrained weights
-        vanilla_train_weights = torch.load("/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/vanilla_sample_training_output/model_weights/epoch200_step564.pt", map_location=torch.device('cpu'))
-        dchiral_train_weights = torch.load("/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/mirrored_sample_training_output/model_weights/epoch200_step606.pt", map_location=torch.device('cpu'))
-        
-        # Extract model state dictionaries
-        vanilla_model_state_dict = vanilla_train_weights['model_state_dict']
-        dchiral_model_state_dict = dchiral_train_weights['model_state_dict']
-
-        # Load the state dictionaries
-        self.vanilla.load_state_dict(vanilla_model_state_dict)
-        self.dchiral.load_state_dict(dchiral_model_state_dict)
-
-        # Freeze the weights in the vanilla and d-chiral models 
-        for param in list(self.vanilla.parameters()) + list(self.dchiral.parameters()):
-            param.requires_grad = False
-
-        # Set models to evaluation mode
-        self.vanilla.eval()
-        self.dchiral.eval()
+        # vanilla_train_weights = torch.load("/mnt/c/Users/thefr/Downloads/epoch200_step564.pt", map_location=torch.device('cpu'))
+        # dchiral_train_weights = torch.load("/mnt/c/Users/thefr/Downloads/epoch200_step606.pt", map_location=torch.device('cpu'))
+        #
+        # 
+        # # Extract model state dictionaries
+        # vanilla_model_state_dict = vanilla_train_weights['model_state_dict']
+        # dchiral_model_state_dict = dchiral_train_weights['model_state_dict']
+        #
+        # # Load the state dictionaries
+        # self.vanilla.load_state_dict(vanilla_model_state_dict)
+        # self.dchiral.load_state_dict(dchiral_model_state_dict)
+        #
+        # # Freeze the weights in the vanilla and d-chiral models 
+        # for param in list(self.vanilla.parameters()) + list(self.dchiral.parameters()):
+        #     param.requires_grad = False
+        #
+        # # Set models to evaluation mode
+        # self.vanilla.eval()
+        # self.dchiral.eval()
 
     def forward(self, X, S, mask, chain_M, residue_idx, chain_encoding_all):
         # Pass input through vanilla and dchiral models
