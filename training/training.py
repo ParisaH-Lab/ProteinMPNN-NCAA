@@ -12,14 +12,16 @@ import numpy as np
 import torch
 from torch import optim
 from torch.utils.data import DataLoader, ConcatDataset
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import multiprocessing as mpi
 import queue
 import copy
 import torch.nn as nn
 import torch.nn.functional as F
-from utils import worker_init_fn, get_pdbs, loader_pdb, build_training_clusters, PDB_dataset, StructureDataset, StructureLoader, chiral_loader
+from utils import worker_init_fn, get_pdbs, loader_pdb, build_training_clusters, PDB_dataset, StructureDataset, StructureLoader, chiral_loader, exec_init_worker
 from model_utils import featurize, get_std_opt
 from new_combo_module import NewComboChiral
+
 
 ########
 # MAIN #
@@ -71,9 +73,9 @@ def main(args):
 
     train, valid, test = build_training_clusters(params, args.debug)
 
-    train_set = PDB_dataset(list(train.keys()), loader_pdb, train, params, chiral_dict)
+    train_set = PDB_dataset(list(train.keys()), loader_pdb, train, params)
     train_loader = torch.utils.data.DataLoader(train_set, worker_init_fn=worker_init_fn, **LOAD_PARAM)
-    valid_set = PDB_dataset(list(valid.keys()), loader_pdb, valid, params, chiral_dict)
+    valid_set = PDB_dataset(list(valid.keys()), loader_pdb, valid, params)
     valid_loader = torch.utils.data.DataLoader(valid_set, worker_init_fn=worker_init_fn, **LOAD_PARAM)
     
     model = NewComboChiral(edge_features=args.hidden_dim, 
@@ -84,7 +86,7 @@ def main(args):
                            k_neighbors=args.num_neighbors, 
                            augment_eps=args.backbone_noise, 
                            input_size=21, 
-                           out1=2)      
+                           out1=1)      
     model.to(device)
 
     if PATH:
@@ -97,20 +99,21 @@ def main(args):
         epoch = 0
 
     optimizer = get_std_opt(model.chiraldetermine.parameters(), args.hidden_dim, total_step)
-    criterion = nn.BCELoss() # Initialize binary loss function classification
+    criterion = nn.BCELoss(reduction='none') # Initialize binary loss function classification
 
     if PATH:
         optimizer.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
-    with ProcessPoolExecutor(max_workers=12) as executor:
+        
+    with ProcessPoolExecutor(max_workers=12, initializer=exec_init_worker, initargs=(chiral_dict,)) as executor:
         q = queue.Queue(maxsize=3)
         p = queue.Queue(maxsize=3)
-        for i in range(3):
+        for _ in range(3):
             q.put_nowait(executor.submit(get_pdbs, train_loader, 1, args.max_protein_length, args.num_examples_per_epoch))
             p.put_nowait(executor.submit(get_pdbs, valid_loader, 1, args.max_protein_length, args.num_examples_per_epoch))
         pdb_dict_train = q.get().result()
         pdb_dict_valid = p.get().result()
-       
+
         dataset_train = StructureDataset(pdb_dict_train, truncate=None, max_length=args.max_protein_length) 
         dataset_valid = StructureDataset(pdb_dict_valid, truncate=None, max_length=args.max_protein_length)
         
@@ -140,25 +143,50 @@ def main(args):
                     q.put_nowait(executor.submit(get_pdbs, train_loader, 1, args.max_protein_length, args.num_examples_per_epoch))
                     p.put_nowait(executor.submit(get_pdbs, valid_loader, 1, args.max_protein_length, args.num_examples_per_epoch))
                 reload_c += 1
-            for  batch in loader_train:
+            for batch in loader_train:
+                # print("--------------")
+                # print("BATCH")
+                # print(batch)
+                # print(batch[0])
+                # print(batch[0]["chiral"])
                 X, S, mask, lengths, chain_M, residue_idx, mask_self, chain_encoding_all = featurize(batch, device)
+                targets = torch.zeros_like(S, dtype=torch.float32, device=device)
+                mask_targets = torch.zeros_like(S, dtype=torch.int8, device=device)
+                for n, n_tar in enumerate(batch):
+                    chiral = n_tar["chiral"]
+                    targets[n, :chiral.size(-1)] = chiral
+                    mask_targets[n, :chiral.size(-1)] = 1
+                print('targets shape:', targets.shape)
                 optimizer.zero_grad()
 
                 # Model forward pass 
                 output = model(X, S, mask, chain_M, residue_idx, chain_encoding_all) 
+                print('OUTPUT:', output)
+                # predictions_binary = torch.argmax(output, -1)
+                print('output shape:', output.shape)
+                # print('output ----> binary shape:', predictions_binary.shape)
+                # print('PRED BINARY:', predictions_binary)
 
                 # Initialize targets for l-chiral (class 1)
                 batch_size = output.size(0)
                 sequence_length = output.size(1)
 
                 # Create a tensor of zeros
-                targets = torch.zeros(batch_size, sequence_length, 2, device=output.device)
+                # targets = torch.zeros(batch_size, sequence_length, 2, device=output.device)
 
                 # Set the second channel to 0 for l-chiral (class 0)
-                targets[:, :, 1] = 1.0 # Set class 1 (l-chiral) to 1
+                # targets[:, :, 1] = 1.0 # Set class 1 (l-chiral) to 1
                     
                 # Compute loss using BCELoss
-                loss = criterion(output, targets) # Calculates the binary cross-entropy loss between model output and targets 
+                # un_norm_loss = criterion(output, targets) # Calculates the binary cross-entropy loss between model output and targets 
+                un_norm_loss = criterion(output.squeeze(-1), targets.float()) # Calculates the binary cross-entropy loss between model output and targets 
+                print(mask_targets.shape)
+                print(un_norm_loss.shape)
+                print(un_norm_loss)
+                
+                loss = (un_norm_loss * mask_targets).sum() / mask_targets.sum()
+                print(loss.shape)
+                print(loss)
                 loss.backward() # Computes the gradients of the loss
                 optimizer.step() # Updates the model parameters based on the gradients
 
