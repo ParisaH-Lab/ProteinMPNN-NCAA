@@ -155,21 +155,11 @@ def get_pdbs(data_loader, repeat=1, max_length=10000, num_units=1000000):
                 mask_list = []
                 visible_list = []
 
-                ##### THIS IS ADDED BY ME FOR TESTING
-                print('t dict weird thing:', t)
-
                 if len(list(np.unique(t['idx']))) < 352:
-
-                    ##### THIS IS ADDED BY ME FOR TESTING
-                    print('t index:', t["idx"])
-
                     for idx in list(np.unique(t['idx'])):
                         letter = chain_alphabet[idx]
                         res = np.argwhere(t['idx']==idx)
                         initial_sequence= "".join(list(np.array(list(t['seq']))[res][0,]))
-                        print(t['seq'])
-                        print(t['chiral'])
-                        input("PRESS <ENTER>")
                         if initial_sequence[-6:] == "HHHHHH":
                             res = res[:,:-6]
                         if initial_sequence[0:6] == "HHHHHH":
@@ -206,6 +196,7 @@ def get_pdbs(data_loader, repeat=1, max_length=10000, num_units=1000000):
                             coords_dict_chain['C_chain_'+letter]=all_atoms[:,2,:].tolist()
                             coords_dict_chain['O_chain_'+letter]=all_atoms[:,3,:].tolist()
                             my_dict['coords_chain_'+letter]=coords_dict_chain
+                    my_dict['chiral'] = t['chiral']
                     my_dict['name']= t['label']
                     my_dict['masked_list']= mask_list
                     my_dict['visible_list']= visible_list
@@ -220,12 +211,12 @@ def get_pdbs(data_loader, repeat=1, max_length=10000, num_units=1000000):
 
 
 class PDB_dataset(torch.utils.data.Dataset):
-    def __init__(self, IDs, loader, train_dict, params, chiral_dict):
+    def __init__(self, IDs, loader, train_dict, params):
         self.IDs = IDs
         self.train_dict = train_dict
         self.loader = loader
         self.params = params
-        self.chiral_dict = chiral_dict
+        # self.chiral_dict = chiral_dict
 
     def __len__(self):
         return len(self.IDs)
@@ -233,11 +224,13 @@ class PDB_dataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         ID = self.IDs[index]
         sel_idx = np.random.randint(0, len(self.train_dict[ID]))
-        print('dict:', self.train_dict[ID])
-        print('sel_idx:', sel_idx)
-        print('dict with sel_idx:', self.train_dict[ID][sel_idx])
-        out = self.loader(self.train_dict[ID][sel_idx], self.params, self.chiral_dict)
+        out = self.loader(self.train_dict[ID][sel_idx], self.params)
         return out
+
+def exec_init_worker(dict_ref):
+    """This is for the PrcoessPoolExecutor to share a large dict"""
+    global chiral_dict
+    chiral_dict = dict_ref
 
 def chiral_loader(params: dict):
     """Generate a dictionary of values that are associated with a residues chirality 
@@ -269,13 +262,15 @@ def chiral_loader(params: dict):
         values = torch.tensor(
             [
                 0 if x=="D" else 1 for x in line_split[1]
-            ]
+            ], dtype=torch.int8,
         )
         chiral_dict[key] = values
+    # close file
+    chiral_file.close()
 
     return chiral_dict
 
-def loader_pdb(item,params, chiral_dict: dict): # This means PDB_dataset needs this passed as well
+def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_dataset needs this passed as well
     """
     New addition was chiral_dict which will be used to determine the chirality of
     each residue
@@ -306,7 +301,8 @@ def loader_pdb(item,params, chiral_dict: dict): # This means PDB_dataset needs t
                 'idx'    : torch.zeros(L).int(),
                 'masked' : torch.Tensor([0]).int(),
                 'label'  : item[0],
-                'chiral' : chiral_dict[item[0]]}
+                'chiral' : chiral_dict[item[0]],
+                }
 
     # randomly pick one assembly from candidates
     asmb_i = random.sample(list(asmb_candidates), 1)
@@ -362,7 +358,8 @@ def loader_pdb(item,params, chiral_dict: dict): # This means PDB_dataset needs t
             'idx'    : torch.cat(idx,dim=0),
             'masked' : torch.Tensor(masked).int(),
             'label'  : item[0],
-            'chiral' : chiral_dict[item[0]]}
+            'chiral' : chiral_dict[item[0]],
+            }
 
 def build_training_clusters(params, debug):
     val_ids = set([int(l) for l in open(params['VAL']).readlines()])
