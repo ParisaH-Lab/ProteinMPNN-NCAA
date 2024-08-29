@@ -89,6 +89,25 @@ def main(args):
                            out1=1)      
     model.to(device)
 
+    vanilla_train_weights = torch.load("/mnt/c/Users/thefr/Downloads/epoch200_step564.pt", map_location=device)
+    dchiral_train_weights = torch.load("/mnt/c/Users/thefr/Downloads/epoch200_step606.pt", map_location=device)
+
+    # Extract model state dictionaries
+    vanilla_model_state_dict = vanilla_train_weights['model_state_dict']
+    dchiral_model_state_dict = dchiral_train_weights['model_state_dict']
+
+    # Load the state dictionaries
+    model.vanilla.load_state_dict(vanilla_model_state_dict)
+    model.dchiral.load_state_dict(dchiral_model_state_dict)
+
+    # Freeze the weights in the vanilla and d-chiral models 
+    for param in list(model.vanilla.parameters()) + list(model.dchiral.parameters()):
+        param.requires_grad = False
+
+    # Set models to evaluation mode
+    # self.vanilla.eval()
+    # self.dchiral.eval()
+
     if PATH:
         checkpoint = torch.load(PATH)
         total_step = checkpoint['step'] #write total_step from the checkpoint
@@ -98,13 +117,15 @@ def main(args):
         total_step = 0
         epoch = 0
 
-    optimizer = get_std_opt(model.chiraldetermine.parameters(), args.hidden_dim, total_step)
+    # optimizer = get_std_opt(model.chiraldetermine.parameters(), args.learning_rate, total_step)
+    optimizer = torch.optim.Adam(model.chiraldetermine.parameters(), args.learning_rate, betas=(0.9, 0.999), eps=1e-08)
     criterion = nn.BCELoss(reduction='none') # Initialize binary loss function classification
 
     if PATH:
         optimizer.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-
-        
+    
+    print("STARTING PROCESS POOL")
+    print('----------------------')
     with ProcessPoolExecutor(max_workers=12, initializer=exec_init_worker, initargs=(chiral_dict,)) as executor:
         q = queue.Queue(maxsize=3)
         p = queue.Queue(maxsize=3)
@@ -144,11 +165,6 @@ def main(args):
                     p.put_nowait(executor.submit(get_pdbs, valid_loader, 1, args.max_protein_length, args.num_examples_per_epoch))
                 reload_c += 1
             for batch in loader_train:
-                # print("--------------")
-                # print("BATCH")
-                # print(batch)
-                # print(batch[0])
-                # print(batch[0]["chiral"])
                 X, S, mask, lengths, chain_M, residue_idx, mask_self, chain_encoding_all = featurize(batch, device)
                 targets = torch.zeros_like(S, dtype=torch.float32, device=device)
                 mask_targets = torch.zeros_like(S, dtype=torch.int8, device=device)
@@ -156,16 +172,10 @@ def main(args):
                     chiral = n_tar["chiral"]
                     targets[n, :chiral.size(-1)] = chiral
                     mask_targets[n, :chiral.size(-1)] = 1
-                print('targets shape:', targets.shape)
                 optimizer.zero_grad()
 
                 # Model forward pass 
                 output = model(X, S, mask, chain_M, residue_idx, chain_encoding_all) 
-                print('OUTPUT:', output)
-                # predictions_binary = torch.argmax(output, -1)
-                print('output shape:', output.shape)
-                # print('output ----> binary shape:', predictions_binary.shape)
-                # print('PRED BINARY:', predictions_binary)
 
                 # Initialize targets for l-chiral (class 1)
                 batch_size = output.size(0)
@@ -180,39 +190,37 @@ def main(args):
                 # Compute loss using BCELoss
                 # un_norm_loss = criterion(output, targets) # Calculates the binary cross-entropy loss between model output and targets 
                 un_norm_loss = criterion(output.squeeze(-1), targets.float()) # Calculates the binary cross-entropy loss between model output and targets 
-                print(mask_targets.shape)
-                print(un_norm_loss.shape)
-                print(un_norm_loss)
                 
                 loss = (un_norm_loss * mask_targets).sum() / mask_targets.sum()
-                print(loss.shape)
-                print(loss)
                 loss.backward() # Computes the gradients of the loss
                 optimizer.step() # Updates the model parameters based on the gradients
 
                 # Get binary class predictions
-                predictions_binary = torch.argmax(output, -1)
+                # predictions_binary = torch.argmax(output, -1)
+                predictions_binary = output.squeeze(-1).round()
+                # print('NOT ROUNDED:', output)
+                # print('ROUNDED:', predictions_binary)
 
                 # Convert targets to binary labels
-                targets_binary = torch.argmax(targets, -1)
+                # targets_binary = torch.argmax(targets, -1)
+
 
                 # Debugging statements
-                print(f"Output shape: {output.shape}")
-                print(f"Targets shape: {targets.shape}")
-                print(f"Targets: {targets}")
-                print(f"Predictions shape: {predictions_binary.shape}")  
-                print(f"Predictions: {predictions_binary}")
-                print(f"Target labels shape: {targets_binary.shape}") 
-                print(f"Target labels: {targets_binary}")
+                # print(f"Output shape: {output.shape}")
+                # print(f"Targets shape: {targets.shape}")
+                # print(f"Targets: {targets}")
+                # print(f"Predictions shape: {predictions_binary.shape}")  
+                # print(f"Predictions: {predictions_binary}")
+                # print(f"Target labels shape: {targets_binary.shape}") 
+                # print(f"Target labels: {targets_binary}")
 
                 # Compare predictions with target labels
-                true_false = (predictions_binary == targets_binary).float()
-                print(f"True/False comparison: {true_false}")
+                true_false = (predictions_binary == targets).float()
 
                 # Updating training metrics
                 train_sum += torch.sum(loss).cpu().data.numpy()
                 train_acc += torch.sum(true_false).cpu().data.numpy()
-                train_total_samples += predictions_binary.numel()
+                train_total_samples += mask_targets.sum().cpu().data.numpy()
                 batch_train_steps += 1
                 total_step += 1
 
@@ -227,6 +235,12 @@ def main(args):
 
                 for i, batch in enumerate(loader_valid):
                     X, S, mask, lengths, chain_M, residue_idx, mask_self, chain_encoding_all = featurize(batch, device)
+                    targets = torch.zeros_like(S, dtype=torch.float32, device=device)
+                    mask_targets = torch.zeros_like(S, dtype=torch.int8, device=device)
+                    for n, n_tar in enumerate(batch):
+                        chiral = n_tar["chiral"]
+                        targets[n, :chiral.size(-1)] = chiral
+                        mask_targets[n, :chiral.size(-1)] = 1
                     
                     # Model forward pass
                     log_probs = model(X, S, mask, chain_M, residue_idx, chain_encoding_all)
@@ -236,28 +250,31 @@ def main(args):
                     sequence_length = log_probs.size(1)
 
                     # Create a tensor of zeros 
-                    targets = torch.zeros(batch_size, sequence_length, 2, device=log_probs.device)
+                    # targets = torch.zeros(batch_size, sequence_length, 2, device=log_probs.device)
 
                     # Set the second channel to 1 for l-chiral (class 1)
-                    targets[:, :, 1] = 1.0 # Set class 1 (l-chiral) to 1
+                    # targets[:, :, 1] = 1.0 # Set class 1 (l-chiral) to 1
 
                     # Compute loss
-                    loss = criterion(log_probs, targets)
+                    loss = criterion(log_probs.squeeze(-1), targets.float())
+                    norm_loss = (loss * mask_targets).sum() / mask_targets.sum()
 
                     # Get binary class predictions
-                    predictions_binary = torch.argmax(log_probs, -1)
+                    # predictions_binary = torch.argmax(log_probs, -1)
+                    predictions_binary = log_probs.squeeze(-1).round()
 
                     # Target labels are all ones since we are dealing with l-chiral data exclusively (FOR NOW)
                     # target_binary = torch.ones_like(predictions_binary, device=output.device)  # Shape: [batch_size, sequence_length]
-                    target_binary = torch.argmax(targets, -1)  # Shape: [batch_size, sequence_length]
+                    # target_binary = torch.argmax(targets, -1)  # Shape: [batch_size, sequence_length]
 
                     # Compare predictions with target labels
-                    true_false = (predictions_binary  == target_binary).float()
+                    true_false = (predictions_binary  == targets).float()
 
                     # Update validation metrics
-                    validation_sum += torch.sum(loss).cpu().data.numpy()
+                    validation_sum += torch.sum(norm_loss).cpu().data.numpy()
                     validation_acc += torch.sum(true_false).cpu().data.numpy()
-                    validation_total_samples += predictions_binary.numel()
+                    # validation_total_samples += predictions_binary.numel()
+                    validation_total_samples += mask_targets.sum().cpu().data.numpy()
                     batch_valid_steps += 1
             
             train_loss = train_sum / batch_train_steps
@@ -283,7 +300,8 @@ def main(args):
                         'num_edges' : args.num_neighbors,
                         'noise_level': args.backbone_noise,
                         'model_state_dict': model.state_dict(),
-                        'optimizer_state_dict': optimizer.optimizer.state_dict(),
+                        # 'optimizer_state_dict': optimizer.optimizer.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
                         }, checkpoint_filename_last)
 
             if (e+1) % args.save_model_every_n_epochs == 0:
@@ -294,7 +312,8 @@ def main(args):
                         'num_edges' : args.num_neighbors,
                         'noise_level': args.backbone_noise, 
                         'model_state_dict': model.state_dict(),
-                        'optimizer_state_dict': optimizer.optimizer.state_dict(),
+                        # 'optimizer_state_dict': optimizer.optimizer.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
                         }, checkpoint_filename)
 
 ############
@@ -323,6 +342,7 @@ if __name__ == "__main__":
     argparser.add_argument("--debug", type=bool, default=False, help="minimal data loading for debugging")
     argparser.add_argument("--gradient_norm", type=float, default=-1.0, help="clip gradient norm, set to negative to omit clipping")
     argparser.add_argument("--mixed_precision", type=bool, default=True, help="train with mixed precision")
+    argparser.add_argument("--learning_rate", type=float, default=1e-3, help="learning rate alpha parameters optimizer")
  
     args = argparser.parse_args()    
     main(args)

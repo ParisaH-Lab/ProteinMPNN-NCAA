@@ -146,6 +146,7 @@ def get_pdbs(data_loader, repeat=1, max_length=10000, num_units=1000000):
                 my_dict = {}
                 s = 0
                 concat_seq = ''
+                concat_chiral = ''
                 concat_N = []
                 concat_CA = []
                 concat_C = []
@@ -184,7 +185,9 @@ def get_pdbs(data_loader, repeat=1, max_length=10000, num_units=1000000):
                             pass
                         else:
                             my_dict['seq_chain_'+letter]= "".join(list(np.array(list(t['seq']))[res][0,]))
+                            my_dict['chiral_chain_'+letter] = "".join(list(np.array(list(t['chiral']))[res][0,]))
                             concat_seq += my_dict['seq_chain_'+letter]
+                            concat_chiral += my_dict["chiral_chain_"+letter]
                             if idx in t['masked']:
                                 mask_list.append(letter)
                             else:
@@ -196,7 +199,7 @@ def get_pdbs(data_loader, repeat=1, max_length=10000, num_units=1000000):
                             coords_dict_chain['C_chain_'+letter]=all_atoms[:,2,:].tolist()
                             coords_dict_chain['O_chain_'+letter]=all_atoms[:,3,:].tolist()
                             my_dict['coords_chain_'+letter]=coords_dict_chain
-                    my_dict['chiral'] = t['chiral']
+                    my_dict['chiral'] = convert_tensor(concat_chiral)
                     my_dict['name']= t['label']
                     my_dict['masked_list']= mask_list
                     my_dict['visible_list']= visible_list
@@ -259,16 +262,28 @@ def chiral_loader(params: dict):
         # Grab the key (PDB NAME)
         key = line_split[0]
         # Grab the chiral sequence
-        values = torch.tensor(
-            [
-                0 if x=="D" else 1 for x in line_split[1]
-            ], dtype=torch.int8,
-        )
-        chiral_dict[key] = values
+        # values = torch.tensor(
+        #     [
+        #         0 if x=="D" else 1 for x in line_split[1]
+        #     ], dtype=torch.int8,
+        # )
+        chiral_dict[key] = line_split[1]
     # close file
     chiral_file.close()
 
     return chiral_dict
+
+def convert_tensor(input_str: str):
+    """Convert Chiral Sequence to Tensor of 1 or 0
+
+    input_str: str
+        Chiral string
+    """
+    return torch.tensor(
+        [
+            0 if x=="D" else 1 for x in input_str
+        ], dtype=torch.int8,
+    )
 
 def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_dataset needs this passed as well
     """
@@ -281,7 +296,8 @@ def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_data
     
     # load metadata
     if not os.path.isfile(PREFIX+".pt"):
-        return {'seq': np.zeros(5)}
+        # return {'seq': np.zeros(5)}
+        return {'seq': ''}
     meta = torch.load(PREFIX+".pt")
     asmb_ids = meta['asmb_ids']
     asmb_chains = meta['asmb_chains']
@@ -294,14 +310,16 @@ def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_data
     # if the chains is missing is missing from all the assemblies
     # then return this chain alone
     if len(asmb_candidates)<1:
+        chain_total_name = f"{pdbid}_{chid}"
         chain = torch.load("%s_%s.pt"%(PREFIX,chid))
         L = len(chain['seq'])
+        assert(L == chiral_dict[chain_total_name].size(0))
         return {'seq'    : chain['seq'],
                 'xyz'    : chain['xyz'],
                 'idx'    : torch.zeros(L).int(),
                 'masked' : torch.Tensor([0]).int(),
                 'label'  : item[0],
-                'chiral' : chiral_dict[item[0]],
+                'chiral' : chiral_dict[chain_total_name],
                 }
 
     # randomly pick one assembly from candidates
@@ -317,6 +335,7 @@ def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_data
 
     # generate assembly
     asmb = {}
+    chiral_chain_dict = {}
     for k in idx:
 
         # pick k-th xform
@@ -335,30 +354,34 @@ def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_data
                 xyz = chains[c]['xyz']
                 xyz_ru = torch.einsum('bij,raj->brai', u, xyz) + r[:,None,None,:]
                 asmb.update({(c,k,i):xyz_i for i,xyz_i in enumerate(xyz_ru)})
+                chiral_chain_dict.update({c:chiral_dict[f"{pdbid}_{c}"]})
             except KeyError:
-                return {'seq': np.zeros(5)}
+                # return {'seq': np.zeros(5)}
+                return {'seq': ''}
 
     # select chains which share considerable similarity to chid
     seqid = meta['tm'][chids==chid][0,:,1]
     homo = set([ch_j for seqid_j,ch_j in zip(seqid,chids)
                 if seqid_j>params['HOMO']])
     # stack all chains in the assembly together
-    seq,xyz,idx,masked = "",[],[],[]
+    seq,xyz,idx,masked,chiral_full= "",[],[],[],""
     seq_list = []
     for counter,(k,v) in enumerate(asmb.items()):
         seq += chains[k[0]]['seq']
         seq_list.append(chains[k[0]]['seq'])
         xyz.append(v)
+        chiral_full += chiral_chain_dict[k[0]]
         idx.append(torch.full((v.shape[0],),counter))
         if k[0] in homo:
             masked.append(counter)
 
+    assert(len(seq) == len(chiral_full))
     return {'seq'    : seq,
             'xyz'    : torch.cat(xyz,dim=0),
             'idx'    : torch.cat(idx,dim=0),
             'masked' : torch.Tensor(masked).int(),
             'label'  : item[0],
-            'chiral' : chiral_dict[item[0]],
+            'chiral' : chiral_full,
             }
 
 def build_training_clusters(params, debug):
