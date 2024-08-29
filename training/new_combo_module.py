@@ -40,11 +40,11 @@ class NewComboChiral(nn.Module):
         self.chiraldetermine = ChiralDetermine(input_size=input_size,
                                                out1=out1)
 
-        # Load pretrained weights
+        # # Load pretrained weights
         # vanilla_train_weights = torch.load("/mnt/c/Users/thefr/Downloads/epoch200_step564.pt", map_location=torch.device('cpu'))
         # dchiral_train_weights = torch.load("/mnt/c/Users/thefr/Downloads/epoch200_step606.pt", map_location=torch.device('cpu'))
         #
-        # 
+        #
         # # Extract model state dictionaries
         # vanilla_model_state_dict = vanilla_train_weights['model_state_dict']
         # dchiral_model_state_dict = dchiral_train_weights['model_state_dict']
