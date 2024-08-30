@@ -40,6 +40,10 @@ list.csv:
    CLUSTER    - sequence cluster the chain belongs to (clusters were generated at seqID=30%)
    SEQUENCE   - reference amino acid sequence
 
+chiral_out.csv
+    CHAINID   - chain label, PDBID_CHAINID
+    CHIRALSEQ - reference chirality sequence
+
 valid_clusters.txt - clusters used for validation
 
 test_clusters.txt - clusters used for testing
@@ -51,6 +55,13 @@ Code organization:
 * `utils.py` - utility functions and classes for data loading
 * `exp_020/` - sample outputs
 * `submit_exp_020.sh` - sample SLURM submit script
+-----------------------------------------------------------------------------------------------------
+## Additional Information Added (Andrew Powers)
+
+PDB loading:
+    old: 1l3o_A -> l3 (dir)
+    new: 1l3omirror_A -> l3mirror (dir) # If mirror is in the name
+
 -----------------------------------------------------------------------------------------------------
 Input flags for `training.py`:
 ```
