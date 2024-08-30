@@ -292,7 +292,10 @@ def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_data
     """
 
     pdbid,chid = item[0].split('_')
-    PREFIX = "%s/pdb/%s/%s"%(params['DIR'],pdbid[1:3],pdbid)
+    if 'mirror' in pdbid:
+        PREFIX = os.path.join(params["DIR"], pdbid[1:3]+"mirror", pdbid) # This is pretending first two then mirror (eg. l3mirror)
+    else:
+        PREFIX = "%s/pdb/%s/%s"%(params['DIR'],pdbid[1:3],pdbid)
     
     # load metadata
     if not os.path.isfile(PREFIX+".pt"):

@@ -105,8 +105,8 @@ def main(args):
         param.requires_grad = False
 
     # Set models to evaluation mode
-    # self.vanilla.eval()
-    # self.dchiral.eval()
+    # model.vanilla.eval()
+    # model.dchiral.eval()
 
     if PATH:
         checkpoint = torch.load(PATH)
