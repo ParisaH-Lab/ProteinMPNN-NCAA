@@ -16,6 +16,8 @@ import argparse
 import re
 from multiprocessing.pool import ThreadPool
 import warnings
+from tqdm import tqdm
+# from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # bio packages
 from Bio.PDB import PDBParser
@@ -177,8 +179,13 @@ def flip_sign(match):
     -------
     float
     """
-    value = float(match.group(2))
-    return f" {-value:.3f}"
+    value = -1.0 * float(match)
+    if float(match) > 0:
+        out = f"{value:.3f}"
+    else:
+        out = f"  {value:.3f}"
+    return out
+    # return f" {value:.3f}"
 
 def extract_pdb(pdb_dict: dict, pdb_file: str, out_path: str, out_supp_dir: str):
     """Extract out loop regions into separate pdb_files
@@ -199,6 +206,7 @@ def extract_pdb(pdb_dict: dict, pdb_file: str, out_path: str, out_supp_dir: str)
     file_dict = defaultdict(list)
     # Extract file name
     file_name = pdb_file.split('/')[-1].split(".pdb")[0]
+    chain = file_name[-1]
     index_num = 0
 
     # Iter through PDB file and grab lines based on residue index
@@ -206,6 +214,13 @@ def extract_pdb(pdb_dict: dict, pdb_file: str, out_path: str, out_supp_dir: str)
         # Skip uninportant lines
         if (line.startswith("HEADER")) or (line.startswith("TER")) or (line.startswith("HET")):
             pass
+        elif line.startswith("ANISOU"):
+            print("--------------------------")
+            print("--------------------------")
+            print("ANISOU WITHIN FILE SKIPPING: ", file_name)
+            print("--------------------------")
+            print("--------------------------")
+            return 0
         # Add everything else
         elif line.startswith("ATOM"):
             broken_line = re.sub("\s+", ",", line).split(",")
@@ -214,8 +229,16 @@ def extract_pdb(pdb_dict: dict, pdb_file: str, out_path: str, out_supp_dir: str)
                 key = clean_key(broken_line[3])
             elif "." in broken_line[5]:
                 key = clean_key(broken_line[4])
+            elif bool(re.search("[A-Z]", broken_line[5])):
+                key = clean_key(broken_line[5])
             else:
-                key = int(broken_line[5])
+                try:
+                    key = int(broken_line[5])
+                    # chain = broken_line[4]
+                except:
+                    print(broken_line)
+                    print(file_name)
+                    raise Exception("THIS FILE DIDNT WORK:", file_name, "\n", broken_line)
             # Add the pdb lines to this particular dict 
             file_dict[key].append(line)
 
@@ -223,15 +246,15 @@ def extract_pdb(pdb_dict: dict, pdb_file: str, out_path: str, out_supp_dir: str)
     # iter through loops
     for num, loops in enumerate(pdb_dict["sub_ss_list"]):
         # Standar file
-        pdb_file_name = f"{file_name}_{num}"
-        pdb_file_mirror_name = f"{file_name}mirror_{num}"
+        pdb_file_name = f"{file_name}{num}"
+        pdb_file_mirror_name = f"{file_name}mirror{num}"
         # Generate a pdb file
         out_file = open(os.path.join(
                         out_path,
-                        f"{pdb_file_name}.pdb"), 'w')
+                        f"{pdb_file_name}_{chain}.pdb"), 'w')
         out_mirror_file = open(os.path.join(
                         out_path,
-                        f"{pdb_file_mirror_name}.pdb"), 'w')
+                        f"{pdb_file_mirror_name}_{chain}.pdb"), 'w')
 
         # write first line
         out_file.write("HEADER\n")
@@ -242,12 +265,13 @@ def extract_pdb(pdb_dict: dict, pdb_file: str, out_path: str, out_supp_dir: str)
             out_file.write("".join(file_dict[resi]))
 
             # Regex pattern for capturing the x dimesnion coords
-            pattern = r"([\s|A-Z]\d+\s+)(\d+\.\d+)"
+            pattern = r"(-?\d+\.\d+)(\s*\d*\.\d*\s*\d*\.\d*\s*[A-Z])"
             # write by flipping the sign of x
             out_mirror_file.write(
                 "".join(
                     [
-                        re.sub(pattern, lambda m: m.group(1) + flip_sign(m), line) for line in file_dict[resi]
+                        # re.sub(pattern, lambda m: m.group(1) + flip_sign(m), line) for line in file_dict[resi]
+                        re.sub(pattern, lambda m: flip_sign(m.group(1)) + m.group(2), line) for line in file_dict[resi]
                     ]
                 )
             )
@@ -261,6 +285,8 @@ def extract_pdb(pdb_dict: dict, pdb_file: str, out_path: str, out_supp_dir: str)
             out_path = out_supp_dir,
             seq = "".join(pdb_dict["amino_acid_list"][num]),
             chiral_seq = "".join(pdb_dict["chiral_out"][num]),
+            # chain = chain_list[num],
+            chain = chain,
             file_name = pdb_file_name,
             hash = str(random.randint(100_000, 999_999)),
             cluster = str(random.randint(20_000, 30_000)),
@@ -271,14 +297,17 @@ def extract_pdb(pdb_dict: dict, pdb_file: str, out_path: str, out_supp_dir: str)
         # Generate supllementary mirror files
         generate_supplementary_files(
             out_path = out_supp_dir,
+            # seq = "".join([x.lower() if x.isupper() else x.upper() for x in pdb_dict["amino_acid_list"][num]]),
             seq = "".join(pdb_dict["amino_acid_list"][num]),
             chiral_seq = "".join(["L" if i == "D" else "D" for i in pdb_dict["chiral_out"][num]]),
+            # chain = chain_list[num],
+            chain = chain,
             file_name = pdb_file_mirror_name,
             hash = str(random.randint(100_000, 999_999)),
             cluster = str(random.randint(20_000, 30_000)),
         )
 
-    return 0
+    return 1
 
 def clean_key(key:str):
     """Clean up the key, so that it is an int
@@ -335,6 +364,7 @@ def generate_supplementary_files(
     out_path: str,
     seq: str,
     chiral_seq: str,
+    chain: str,
     file_name: str,
     hash: int,
     cluster: int,
@@ -352,6 +382,8 @@ def generate_supplementary_files(
         Sequence of the loop
     chiral_seq: str
         Sequence of chirality per residue
+    chain: str
+        Chain of the sequence
     file_name: str
         Name of the output file for the loop
     hash: int
@@ -366,6 +398,14 @@ def generate_supplementary_files(
     # generate data information that is need
     date = "2024-08-25"
     resolution = 1.0
+
+    # seq and chirality change
+    seq_converted = ''
+    for i, s in enumerate(seq):
+        if chiral_seq[i] == "D":
+            seq_converted += s.lower()
+        else:
+            seq_converted += s.upper()
 
     # Now check if list/valid/test are generated (if one generated then all made)
     if os.path.exists(os.path.join(out_path, "list.csv")):
@@ -390,12 +430,12 @@ def generate_supplementary_files(
         metadata_out.write("CHAINID,PHI,PSI\n")
 
     # generate a list of important information
-    list_line = f"{file_name},{date},{resolution},{hash},{cluster},{seq}\n"
+    list_line = f"{file_name}_{chain},{date},{resolution},{hash},{cluster},{seq_converted}\n"
     valid_line = f"{cluster}\n"
     test_line = f"{cluster}\n"
-    chiral_line = f"{file_name},{chiral_seq}\n"
+    chiral_line = f"{file_name}_{chain},{chiral_seq}\n"
     if (phi_list != None) or (psi_list != None):
-        metadata_out.write(f"{file_name},{'_'.join(phi_list)},{'_'.join(psi_list)}\n")
+        metadata_out.write(f"{file_name}_{chain},{'_'.join(phi_list)},{'_'.join(psi_list)}\n")
 
     # Write to the files
     list_out.write(list_line)
@@ -434,10 +474,17 @@ def extract_all_loops(pdb: str, out_loop_dir: str, out_supp_dir: str):
         Path to out dir for supplementary files
     """
     # Generate our out dict
-    pdb_dict = dssp_label_residues(pdb)
+    try:
+        pdb_dict = dssp_label_residues(pdb)
+    except Exception:
+        print("-----------------------")
+        print(pdb, " SKIPPING")
+        print("-----------------------")
+        return 0
+    
     # try:
     # Now generate the loop pdbs each given an input pdb
-    extract_pdb(pdb_dict, pdb, out_loop_dir, out_supp_dir)
+    result_num = extract_pdb(pdb_dict, pdb, out_loop_dir, out_supp_dir)
     # except:
     #     # print the problem file
     #     print("---------------------")
@@ -451,11 +498,13 @@ def extract_all_loops(pdb: str, out_loop_dir: str, out_supp_dir: str):
     #     print("---------------------")
     #     print("---------------------")
     #     print("---------------------")
-    return 0
+    return result_num
 
 
 
 if __name__ == "__main__":
+    warnings.simplefilter('ignore', BiopythonWarning)
+
     p = argparse.ArgumentParser(description="Parameters for Loop Extraction and Dataset Creation.")
     p.add_argument("--path", type=str, help="Path to root direcotry of pdb directoires/files.")
     p.add_argument("--pdb", type=str, help="Single Path to PDB for testing")
@@ -491,8 +540,15 @@ if __name__ == "__main__":
         pdb_list = load_function(args.path)
         extract_loops = partial(extract_all_loops, out_loop_dir = args.loop_out_dir, out_supp_dir = args.supplementary_out_path)
         # generate our loops
+        # with ThreadPool(args.cpu_count) as p:
+        #     p.map(
+        #         extract_loops,
+        #         pdb_list
+        #     )
+
         with ThreadPool(args.cpu_count) as p:
-            p.map(
-                extract_loops,
-                pdb_list
-            )
+            futures = list(tqdm(p.imap(extract_loops, pdb_list), total=len(pdb_list)))
+
+        print("--------------------- SCRIPT FINISHED ---------------------")
+        print("--------------------- REPORT OF RUN   ---------------------")
+        print("Number of PDBs Converted: ", sum(futures), ", Percentage of Whole: ", sum(futures)/ len(pdb_list))

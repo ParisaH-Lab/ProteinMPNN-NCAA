@@ -17,6 +17,18 @@ import itertools
 
 
 def featurize(batch, device):
+    # print("-----------------------")
+    # print("-----------------------")
+    # print("NEW ONE")
+    # print("-----------------------")
+    # print("-----------------------")
+    # for n, b in enumerate(batch):
+    #     print("NUMBER: ", n, ", Batch: ", b, "\n")
+        # print("SEQ: ", b["seq"], len(b["seq"]))
+    lengths = [len(b["seq"]) for b in batch]
+    # print(lengths)
+    if lengths == []:
+        print('BATCH:', batch)
     alphabet = 'ACDEFGHIKLMNPQRSTVWYX'
     B = len(batch)
     lengths = np.array([len(b['seq']) for b in batch], dtype=np.int32) #sum of chain seq lengths

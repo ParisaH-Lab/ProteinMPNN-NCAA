@@ -7,6 +7,7 @@ import re
 from scipy.spatial import KDTree
 from itertools import combinations,permutations
 import tempfile
+from functools import partial
 import subprocess
 from biopandas.pdb import PandasPdb
 import pandas as pd
@@ -15,6 +16,187 @@ import random
 from string import digits
 from typing import List
 from tqdm import tqdm
+from multiprocessing.pool import ThreadPool
+
+def extract_pdb_info_nomirror(
+    f:str,
+    to1letter: dict,
+    aa2idx: dict,
+    OUTPUT: str,
+    res_names: list,
+    ) -> List[str]:
+    """Take in a pdb file and extract xyz, atom type, occupancy, and coordinates
+    from the file. Do not generate mirror.
+
+    PARAMETERS
+    ----------
+    f : str
+        pdb file path
+
+    to1letter: dict
+        convert 3 letter Amino Acid to 1 letter
+
+    aa2idx: dict
+        keys are (res, atom): idx_number
+
+    OUTPUT: str
+        global output path str
+
+    res_names: list
+        list of allowed residue types
+
+
+    WRITTEN OUTPUTS
+    ---------------
+    FILE OUTPUT -> f_chid.pt
+
+    seq: str
+        AminoAcid Sequence
+
+    xyz: torch.Tensor
+        XYZ coordinates
+
+    mask: torch.Tensor
+        if an atom is present in the data or not
+        1 for yes 0 for no
+
+    occupancy: torch.Tensor
+        0-1 value measuring disorder of an atom
+
+    bfac: torch.Tensor
+        For me this value is going to be zero for everything, as our methods
+        are Ab-Initio in-silico. However, it is needed since the dataset has it.
+
+    RETURNS
+    -------
+    seq_all: list
+        list of One letter sequences of the peptides
+    """
+    # Check f is of type string
+    assert isinstance(f, str),"This function was expecting a string path, and not a file object"
+    assert os.path.exists(f),f"File {f} does not exist!"
+
+    # Load data into pandas dataframe
+    data = PandasPdb().read_pdb(f)
+    filename = f.strip('.pdb').split('/')[-1]
+    # filename = filename.split("_")[0] + filename.split("_")[1]
+
+    # Sequence holding object
+    seq_all = []
+
+    # Load in het and atom dfs
+    het = data.df["HETATM"]
+    atom = data.df["ATOM"]
+
+    # Combine the dfs
+    df_cat = pd.concat([het, atom], ignore_index=True)
+
+    # Sort so the atoms are in order
+    df_cat.sort_values(by="atom_number", inplace=True)
+
+    # extra chain information
+    chids = set(df_cat.chain_id)
+    assert(len(list(chids)) == 1, "There are more chains (Need to fix this script)")
+    id_out = next(iter(chids))
+
+    # make into pandas dataframe
+    # out_df = pd.concat([df_cat, mirror_atom_df], axis=1)
+    out_df = df_cat
+
+    # loop through chids
+    for id in chids:
+        # extract out id
+        #temp = df_cat[df_cat.chain_id == id]
+        temp = out_df[out_df.chain_id == id]
+
+        # Get rid of waters
+        # temp = temp[temp.residue_name != 'HOH']
+        temp = temp[temp.residue_name.isin(res_names)]
+
+        # extract sequence info by eliminating multiple residue number occurences
+        temp_unique = temp.drop_duplicates(subset="residue_number",
+                                           keep="first")
+
+        # convert residue_name to a string
+        seq = "".join(
+            [to1letter["GLY"] if aaa not in to1letter.keys() else to1letter[aaa] for aaa in temp_unique.residue_name]
+        )
+
+	    # # inverse the sequence
+     #    inv_seq = gen_seq(seq)
+
+        # If this chain has nothing but elements/unknown current noncanonicals then pass
+        if seq == "":
+            continue
+
+        # extract seq length
+        L = len(seq)
+        ctr = -1
+
+        # remove non useful atoms
+        temp = temp[temp.atom_name.isin(
+            ["N", "CA", "C", "O", "CB", "CG", "CD1", "CD2", "CE2", "CE3", "NE1", "CZ2", "CZ3", "CH2"]
+        )]
+
+        # init xyz and occupancy
+        xyz = torch.zeros((L,14,3)) #(L, Atom, XYZ)
+        mirror_xyz = torch.zeros((L,14,3)) #(L, Atom, XYZ)
+        occupancy = torch.zeros((L,14)) #(L, Atom)
+        mask = torch.zeros((L,14)) #(L, Atom)
+
+        # hold val for checking position
+        residue_idx = -1
+
+        # fill in occupancy and xyz info
+        for _, row in temp.iterrows():
+            # extract residue number and this will be our (L) key for when to switch
+            current_num = row.residue_number
+            if current_num != residue_idx:
+                residue_idx = current_num
+                ctr += 1
+            # grab residue and atom for key accesing
+            aaa = row.residue_name if row.residue_name in to1letter.keys() else "GLY"
+            aa_atom = row.atom_name
+            if aaa == "GLY" and aa_atom not in ["CA", "N", "O", "C"]:
+                continue
+            key = (aaa, aa_atom)
+            # Extract positional information
+            try:
+                xyz[ctr, aa2idx[key], 0] = row.x_coord
+                xyz[ctr, aa2idx[key], 1] = row.y_coord
+                xyz[ctr, aa2idx[key], 2] = row.z_coord
+            except:
+                print("FAILED ON FILE: ", filename)
+            # Extract occupancy
+            occupancy[ctr, aa2idx[key]] = row.occupancy
+            # Attend to info
+            mask[ctr, aa2idx[key]] = 1.0
+        # Reformat the 0.0s to nans like how they have originally
+        xyz = torch.where(xyz == 0., float('nan'), xyz)
+        mirror_xyz = torch.where(mirror_xyz == 0., float('nan'), mirror_xyz)
+        # Create bfac 
+        bfac = torch.where(mask==0., float('nan'), mask)
+        bfac = torch.where(bfac==1., float(0.), bfac)
+
+        # Write data
+        OUT = os.path.join(OUTPUT,"heterochiral"+filename)
+
+        # create dict to write
+        keys = ['seq', 'xyz', 'mask', 'bfac', 'occ']
+        vals = [seq, xyz, mask, bfac, occupancy]
+        out_dict = dict(zip(keys, vals))
+
+        # out name file
+        out_file = f"{OUT}_{id}.pt"
+        # out_file = f"{OUT}.pt"
+
+        # Write out chain.pt 
+        torch.save(out_dict, out_file)
+
+        # Add seq to seq_all
+        seq_all.append(seq)
+
+    return seq_all, id_out, out_file
 
 def extract_pdb_info(f:str,
                      to1letter: dict,
@@ -282,7 +464,65 @@ def reflect_through_plane(atom_coords):
 
     return reflected_coords
 
-def write_pt_general(f: object, OUTPUT:str, seq:list) -> int:
+def write_pt_general_nomirror(f: object, seq:list, chain:str, OUTPUT:str) -> int:
+    """Write out the general generic monomeric .pt file for training
+    Does not take mirror input. Use non mirror extract_pdb_info_nomirror
+
+    PARAMETERS
+    ----------
+    f: file object
+        PDB file
+
+    seq: list
+        list of one letter string of AAs in the peptide.
+        This works as an input, because the
+    chian: str
+        The chain id outputted
+
+    OUTPUT: str
+        OUTPUT dir path
+
+    RETURNS
+    -------
+    0: int
+        Zero status exit
+    """
+    # Strip filename path info
+    filename = f.strip(".pdb").split("/")[-1]
+    filename = filename.split("_")[0] + filename.split("_")[1]
+
+    # Combine output and filename to create out name
+    OUT = os.path.join(OUTPUT, "heterochiral"+filename+".pt")
+
+    # correct seq input
+    #if len(seq) == 1:
+    seq = [[seq[0], seq[0]]]
+
+    # Specify hard code contents
+    contents = {
+        'method': 'IN-SILICO',
+        'date': '2023-08-16',
+        'resolution': None,
+        'chains': [chain],
+        'seq': seq,
+        'id': filename,
+        'asmb_chains': [chain],
+        'asmb_details': ['author_defined_assembly'],
+        'asmb_method': ['?'],
+        'asmb_ids': ['1'],
+        'asmb_xform0': torch.tensor([[[1., 0., 0., 0.],
+                 [0., 1., 0., 0.],
+                 [0., 0., 1., 0.],
+                 [0., 0., 0., 1.]]]),
+        'tm': torch.tensor([[[1., 1., 0.]]])
+    }
+
+    # write to .pt
+    torch.save(contents, OUT)
+
+    return 0
+
+def write_pt_general(f: object, seq:list, OUTPUT:str) -> int:
     """Write out the general generic monomeric .pt file for training
 
     PARAMETERS
@@ -356,17 +596,52 @@ def write_pt_general(f: object, OUTPUT:str, seq:list) -> int:
 
     return 0
 
+def multithread_process(
+    file: str,
+    write_extra: bool,
+    list_csv_file,
+    test_file,
+    valid_file,
+    to1letter: dict,
+    aa2idx: dict,
+    OUTPUT: str,
+    res_names: dict,
+    ) -> int:
+    # Run file through both functions
+    seq_list, id_out, chain_id = extract_pdb_info_nomirror(f=file, to1letter=to1letter, aa2idx=aa2idx, OUTPUT=OUTPUT, res_names=res_names)
+    write_pt_general_nomirror(f=file, seq=seq_list, chain=id_out, OUTPUT=OUTPUT)
+    if write_extra:
+        # Variables for list and cluster files
+        hash_out = ''.join(random.choice(digits) for i in range(6))
+        cluster_out = ''.join(random.choice(digits) for i in range(6))
+
+        # Write out info to list.csv
+        list_out = f"{chain_id},2023-08-16,0.0,{hash_out},{cluster_out},{seq_list[0]}"
+        print(list_out, file=list_csv_file)
+
+        # Write to test or validate
+        # 20% of the time write to test or validate
+        if np.random.choice([0,1], p=[0.8, 0.2], size=1):
+            if np.random.choice([0,1], p=[0.5,0.5], size=1):
+                print(cluster_out, file=valid_file)
+            else:
+                print(cluster_out, file=test_file)
+    return 0
+
+
 def main():
     """Main function that cycles through a pdb input dir and returns .pt
     files for each of them in the correct orientation of the .pt files
     needed to train the model."""
 
     # Define argument parser
-    p = argparse.ArgumentParser("Arguments Needed to Create .pt Files")
-    p.add_argument("--path_to_pdb_dir", type=str, help="Specify Path to directory with noncanonical PDBs \
-    (default = ./noncanonical_pdbs)", default="./noncanonical_pdbs")
-    p.add_argument("--path_to_output", type=str, help="Specify Path to output directory \
-    (default = ../training_data_repo)", default="../training_data_repo")
+    p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    p.add_argument("--path-to-pdb-dir", type=str, help="Specify Path to directory with noncanonical PDBs",
+                   default="./noncanonical_pdbs")
+    p.add_argument("--path-to-output", type=str, help="Specify Path to output directory",
+                   default="../training_data_repo")
+    p.add_argument("--generate-extra", action="store_true", help="Flag for if you want list.csv, test_cluster.txt, and valid_cluster.txt generated")
+    p.add_argument("--cpu-count", type=int, default=12, help="Number of CPUs for MultiThreading")
     PARSER = p.parse_args()
 
     # Specify passed argument global variables
@@ -443,69 +718,83 @@ def main():
               for i,a in enumerate(atoms)}
     aa2idx.update({(r,'OXT'):3 for r in RES_NAMES})
 
-    # Header for list.csv
-    HEADER = "CHAINID,DEPOSITION,RESOLUTION,HASH,CLUSTER,SEQUENCE"
+    if PARSER.generate_extra:
+        # Header for list.csv
+        HEADER = "CHAINID,DEPOSITION,RESOLUTION,HASH,CLUSTER,SEQUENCE"
 
-    # Specify up 2 directories for output
-    CSVOUT = "/".join(OUTPUT.split('/')[:-2])
-    print(OUTPUT)
-    print(CSVOUT)
+        # Specify up 2 directories for output
+        CSVOUT = "/".join(OUTPUT.split('/')[:-2])
+        print(OUTPUT)
+        print(CSVOUT)
 
-    # open training files
-    list_csv_file = open(os.path.join(CSVOUT,'list.csv'), 'w')
-    valid_file = open(os.path.join(CSVOUT,'valid_clusters.txt'), 'w')
-    test_file = open(os.path.join(CSVOUT,'test_clusters.txt'), 'w')
+        # open training files
+        list_csv_file = open(os.path.join(CSVOUT,'list.csv'), 'w')
+        valid_file = open(os.path.join(CSVOUT,'valid_clusters.txt'), 'w')
+        test_file = open(os.path.join(CSVOUT,'test_clusters.txt'), 'w')
 
-    # Write header to file
-    print(HEADER, file=list_csv_file)
+        # Write header to file
+        print(HEADER, file=list_csv_file)
+    else:
+        list_csv_file, valid_file, test_file = None, None, None
+
+    # generate partial functions
+    params_func = {'to1letter':to1letter, 'aa2idx':aa2idx, 'OUTPUT':OUTPUT, 'res_names':RES_NAMES,
+                   'list_csv_file':list_csv_file, 'valid_file':valid_file, 'test_file':test_file,
+                   'write_extra':PARSER.generate_extra}
+    multithread_partial = partial(multithread_process, **params_func)
 
     # Loop through files within the inputs
     file_pattern = os.path.join(INPUT,'*.pdb')
     files = glob.glob(file_pattern)
-    for file in tqdm(files):
-        seq_list, chain_id, chain_id_rev = extract_pdb_info(
-            f=file,
-            to1letter=to1letter,
-            aa2idx=aa2idx,
-            OUTPUT=OUTPUT,
-            res_names=RES_NAMES,
-        )
-        write_pt_general(
-            f=file,
-            OUTPUT=OUTPUT,
-            seq=seq_list,
-        )
+    with ThreadPool(PARSER.cpu_count) as p: 
+        results = list(tqdm(p.imap(multithread_partial, files), total=len(files)))
 
-        # Variables for list and cluster files
-        hash_out = ''.join(random.choice(digits) for i in range(6))
-        cluster_out = ''.join(random.choice(digits) for i in range(6))
-        hash_out2 = ''.join(random.choice(digits) for i in range(6))
-        cluster_out2 = ''.join(random.choice(digits) for i in range(6))
+    # for file in tqdm(files):
+    #     seq_list, chain_id, chain_id_rev = extract_pdb_info(
+    #         f=file,
+    #         to1letter=to1letter,
+    #         aa2idx=aa2idx,
+    #         OUTPUT=OUTPUT,
+    #         res_names=RES_NAMES,
+    #     )
+    #     write_pt_general(
+    #         f=file,
+    #         OUTPUT=OUTPUT,
+    #         seq=seq_list,
+    #     )
 
-        # Write out info to list.csv
-        list_out = f"{chain_id},2023-08-16,0.0,{hash_out},{cluster_out},{seq_list[0]}"
-        list_out2 = f"{chain_id_rev},2023-08-16,0.0,{hash_out2},{cluster_out2},{seq_list[-1]}"
-        print(list_out, file=list_csv_file)
-        print(list_out2, file=list_csv_file)
+        # if PARSER.generate_extra:
+        #     # Variables for list and cluster files
+        #     hash_out = ''.join(random.choice(digits) for i in range(6))
+        #     cluster_out = ''.join(random.choice(digits) for i in range(6))
+        #     hash_out2 = ''.join(random.choice(digits) for i in range(6))
+        #     cluster_out2 = ''.join(random.choice(digits) for i in range(6))
+        #
+        #     # Write out info to list.csv
+        #     list_out = f"{chain_id},2023-08-16,0.0,{hash_out},{cluster_out},{seq_list[0]}"
+        #     list_out2 = f"{chain_id_rev},2023-08-16,0.0,{hash_out2},{cluster_out2},{seq_list[-1]}"
+        #     print(list_out, file=list_csv_file)
+        #     print(list_out2, file=list_csv_file)
+        #
+        #     # Write to test or validate
+        #     # 20% of the time write to test or validate
+        #     if np.random.choice([0,1], p=[0.8, 0.2], size=1):
+        #         if np.random.choice([0,1], p=[0.5,0.5], size=1):
+        #             print(cluster_out, file=valid_file)
+        #         else:
+        #             print(cluster_out, file=test_file)
+        #     # 20% of the time write to test or validate
+        #     if np.random.choice([0,1], p=[0.8, 0.2], size=1):
+        #         if np.random.choice([0,1], p=[0.5,0.5], size=1):
+        #             print(cluster_out2, file=valid_file)
+        #         else:
+        #             print(cluster_out2, file=test_file)
 
-        # Write to test or validate
-        # 20% of the time write to test or validate
-        if np.random.choice([0,1], p=[0.8, 0.2], size=1):
-            if np.random.choice([0,1], p=[0.5,0.5], size=1):
-                print(cluster_out, file=valid_file)
-            else:
-                print(cluster_out, file=test_file)
-        # 20% of the time write to test or validate
-        if np.random.choice([0,1], p=[0.8, 0.2], size=1):
-            if np.random.choice([0,1], p=[0.5,0.5], size=1):
-                print(cluster_out2, file=valid_file)
-            else:
-                print(cluster_out2, file=test_file)
-
-    # Close files
-    list_csv_file.close()
-    valid_file.close()
-    test_file.close()
+    if PARSER.generate_extra:
+        # Close files
+        list_csv_file.close()
+        valid_file.close()
+        test_file.close()
 
     return 0
 
