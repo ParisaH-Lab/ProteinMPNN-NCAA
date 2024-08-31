@@ -21,7 +21,7 @@ class StructureDataset():
 
         start = time.time()
         for i, entry in enumerate(pdb_dict_list):
-            seq = entry['seq']
+            seq = entry['seq'].upper()
             name = entry['name']
 
             bad_chars = set([s for s in seq]).difference(alphabet_set)
@@ -137,12 +137,18 @@ def get_pdbs(data_loader, repeat=1, max_length=10000, num_units=1000000):
     c = 0
     c1 = 0
     pdb_dict_list = []
+    label_list = []
     t0 = time.time()
     for _ in range(repeat):
         for step,t in enumerate(data_loader):
+            # print("------------------------------------")
+            # print("T PRINT FIRST")
+            # print(t["seq"])
+            # print(t["xyz"].shape)
             t = {k:v[0] for k,v in t.items()}
             c1 += 1
             if 'label' in list(t):
+                label_list.append(t["label"])
                 my_dict = {}
                 s = 0
                 concat_seq = ''
@@ -156,11 +162,48 @@ def get_pdbs(data_loader, repeat=1, max_length=10000, num_units=1000000):
                 mask_list = []
                 visible_list = []
 
-                if len(list(np.unique(t['idx']))) < 352:
+                if 'heterochiral' in t["label"]:
                     for idx in list(np.unique(t['idx'])):
                         letter = chain_alphabet[idx]
                         res = np.argwhere(t['idx']==idx)
+                        # print("RES BEFORE IF AND ELSE:", res)
                         initial_sequence= "".join(list(np.array(list(t['seq']))[res][0,]))
+                        my_dict['seq_chain_'+letter]= "".join(list(np.array(list(t['seq']))[res][0,]))
+                        my_dict['chiral_chain_'+letter] = "".join(list(np.array(list(t['chiral']))[res][0,]))
+                        concat_seq += my_dict['seq_chain_'+letter]
+                        concat_chiral += my_dict["chiral_chain_"+letter]
+                        if idx in t['masked']:
+                            mask_list.append(letter)
+                        else:
+                            visible_list.append(letter)
+                        coords_dict_chain = {}
+                        all_atoms = np.array(t['xyz'][res,])[0,] #[L, 14, 3]
+                        coords_dict_chain['N_chain_'+letter]=all_atoms[:,0,:].tolist()
+                        coords_dict_chain['CA_chain_'+letter]=all_atoms[:,1,:].tolist()
+                        coords_dict_chain['C_chain_'+letter]=all_atoms[:,2,:].tolist()
+                        coords_dict_chain['O_chain_'+letter]=all_atoms[:,3,:].tolist()
+                        my_dict['coords_chain_'+letter]=coords_dict_chain
+                    my_dict['chiral'] = convert_tensor(concat_chiral)
+                    my_dict['name']= t['label']
+                    my_dict['masked_list']= mask_list
+                    my_dict['visible_list']= visible_list
+                    my_dict['num_of_chains'] = len(mask_list) + len(visible_list)
+                    my_dict['seq'] = concat_seq
+                    if len(concat_seq) <= max_length:
+                        pdb_dict_list.append(my_dict)
+                    if len(pdb_dict_list) >= num_units:
+                        break
+
+
+
+                elif len(list(np.unique(t['idx']))) < 352:
+                    # print('T UNIQUE LIST :', list(np.unique(t['idx'])))
+                    for idx in list(np.unique(t['idx'])):
+                        letter = chain_alphabet[idx]
+                        res = np.argwhere(t['idx']==idx)
+                        # print("RES BEFORE IF AND ELSE:", res)
+                        initial_sequence= "".join(list(np.array(list(t['seq']))[res][0,]))
+                        # print('INIT SEQ:', initial_sequence)
                         if initial_sequence[-6:] == "HHHHHH":
                             res = res[:,:-6]
                         if initial_sequence[0:6] == "HHHHHH":
@@ -184,6 +227,13 @@ def get_pdbs(data_loader, repeat=1, max_length=10000, num_units=1000000):
                         if res.shape[1] < 4:
                             pass
                         else:
+                            # print('RES IN ELSE:', res)
+                            # print("SEQ CHAIN", "".join(list(np.array(list(t['seq']))[res][0,])))
+                            # print("SEQ CHAIN WITHOUT last [0]", list(np.array(list(t['seq']))[res]))
+                            # print("CHIRAL CHAIN", "".join(list(np.array(list(t['chiral']))[res][0,])))
+
+                            # print("END------------------------------------")
+                            
                             my_dict['seq_chain_'+letter]= "".join(list(np.array(list(t['seq']))[res][0,]))
                             my_dict['chiral_chain_'+letter] = "".join(list(np.array(list(t['chiral']))[res][0,]))
                             concat_seq += my_dict['seq_chain_'+letter]
@@ -209,6 +259,8 @@ def get_pdbs(data_loader, repeat=1, max_length=10000, num_units=1000000):
                         pdb_dict_list.append(my_dict)
                     if len(pdb_dict_list) >= num_units:
                         break
+    # print(pdb_dict_list)
+    # print("END OF GET PDBS (LABEL LIST):", label_list)
     return pdb_dict_list
 
 
@@ -292,15 +344,19 @@ def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_data
     """
 
     pdbid,chid = item[0].split('_')
-    if 'mirror' in pdbid:
+    if 'heterochiral' in pdbid:
+        PREFIX = os.path.join(params["DIR"], "pt_loops", "pdb", "heterochiral", pdbid)
+    elif 'mirror' in pdbid:
         PREFIX = os.path.join(params["DIR"], pdbid[1:3]+"mirror", pdbid) # This is pretending first two then mirror (eg. l3mirror)
     else:
         PREFIX = "%s/pdb/%s/%s"%(params['DIR'],pdbid[1:3],pdbid)
     
     # load metadata
     if not os.path.isfile(PREFIX+".pt"):
+        print("DOESNT EXIST:", PREFIX)
         # return {'seq': np.zeros(5)}
-        return {'seq': ''}
+        # return {'seq': ''}
+        pass
     meta = torch.load(PREFIX+".pt")
     asmb_ids = meta['asmb_ids']
     asmb_chains = meta['asmb_chains']
@@ -312,12 +368,12 @@ def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_data
 
     # if the chains is missing is missing from all the assemblies
     # then return this chain alone
-    if len(asmb_candidates)<1:
+    if len(asmb_candidates)<=1:
         chain_total_name = f"{pdbid}_{chid}"
         chain = torch.load("%s_%s.pt"%(PREFIX,chid))
         L = len(chain['seq'])
-        assert(L == chiral_dict[chain_total_name].size(0))
-        return {'seq'    : chain['seq'],
+        # assert(L == chiral_dict[chain_total_name].size(0))
+        return {'seq'    : chain['seq'].upper(),
                 'xyz'    : chain['xyz'],
                 'idx'    : torch.zeros(L).int(),
                 'masked' : torch.Tensor([0]).int(),
@@ -359,8 +415,10 @@ def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_data
                 asmb.update({(c,k,i):xyz_i for i,xyz_i in enumerate(xyz_ru)})
                 chiral_chain_dict.update({c:chiral_dict[f"{pdbid}_{c}"]})
             except KeyError:
+                print("KEY ERROR FILE:", item[0])
                 # return {'seq': np.zeros(5)}
-                return {'seq': ''}
+                # return {'seq': ''}
+                pass
 
     # select chains which share considerable similarity to chid
     seqid = meta['tm'][chids==chid][0,:,1]
@@ -370,15 +428,20 @@ def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_data
     seq,xyz,idx,masked,chiral_full= "",[],[],[],""
     seq_list = []
     for counter,(k,v) in enumerate(asmb.items()):
-        seq += chains[k[0]]['seq']
-        seq_list.append(chains[k[0]]['seq'])
+        # seq += chains[k[0]]['seq']
+        # seq_list.append(chains[k[0]]['seq'])
+        seq += chains[k[0]]['seq'].upper()
+        seq_list.append(chains[k[0]]['seq'].upper())
         xyz.append(v)
         chiral_full += chiral_chain_dict[k[0]]
         idx.append(torch.full((v.shape[0],),counter))
         if k[0] in homo:
             masked.append(counter)
 
-    assert(len(seq) == len(chiral_full))
+    # if len(seq) == len(chiral_full):
+    # print("AMSB OF > 1")
+    # print("SEQ:", len(seq))
+    # print("CHIRAL:", len(chiral_full))
     return {'seq'    : seq,
             'xyz'    : torch.cat(xyz,dim=0),
             'idx'    : torch.cat(idx,dim=0),
@@ -386,6 +449,8 @@ def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_data
             'label'  : item[0],
             'chiral' : chiral_full,
             }
+    # else:
+    #     return {'seq': ''}
 
 def build_training_clusters(params, debug):
     val_ids = set([int(l) for l in open(params['VAL']).readlines()])
