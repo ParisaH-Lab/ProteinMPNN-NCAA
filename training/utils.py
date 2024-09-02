@@ -1,4 +1,5 @@
 import torch
+import psutil
 from torch.utils.data import DataLoader
 import csv
 from dateutil import parser
@@ -349,14 +350,16 @@ def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_data
     elif 'mirror' in pdbid:
         PREFIX = os.path.join(params["DIR"], pdbid[1:3]+"mirror", pdbid) # This is pretending first two then mirror (eg. l3mirror)
     else:
-        PREFIX = "%s/pdb/%s/%s"%(params['DIR'],pdbid[1:3],pdbid)
+        PREFIX = os.path.join(params["DIR"], "pt_loops", "pdb", "homochiral", pdbid[1:3], pdbid)
+        # PREFIX = "%s/pdb/%s/%s"%(params['DIR'],pdbid[1:3],pdbid)
+    # assert "/".join(PREFIX.split('/')[:-1]) == os.path.join(params['DIR'],"pt_loops", "pdb", "heterochiral", pdbid[1:3]), f"The Path is Different Then: {os.path.join(params['DIR'],'pt_loops', 'pdb', 'heterochiral', pdbid[1:3])}"
     
     # load metadata
     if not os.path.isfile(PREFIX+".pt"):
-        print("DOESNT EXIST:", PREFIX)
-        # return {'seq': np.zeros(5)}
+        # print("DOESNT EXIST:", PREFIX)
+        return {'seq': np.zeros(5)}
         # return {'seq': ''}
-        pass
+        # pass
     meta = torch.load(PREFIX+".pt")
     asmb_ids = meta['asmb_ids']
     asmb_chains = meta['asmb_chains']
@@ -368,7 +371,7 @@ def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_data
 
     # if the chains is missing is missing from all the assemblies
     # then return this chain alone
-    if len(asmb_candidates)<=1:
+    if len(asmb_candidates)<1:
         chain_total_name = f"{pdbid}_{chid}"
         chain = torch.load("%s_%s.pt"%(PREFIX,chid))
         L = len(chain['seq'])
@@ -416,9 +419,9 @@ def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_data
                 chiral_chain_dict.update({c:chiral_dict[f"{pdbid}_{c}"]})
             except KeyError:
                 print("KEY ERROR FILE:", item[0])
-                # return {'seq': np.zeros(5)}
+                return {'seq': np.zeros(5)}
                 # return {'seq': ''}
-                pass
+                # pass
 
     # select chains which share considerable similarity to chid
     seqid = meta['tm'][chids==chid][0,:,1]
