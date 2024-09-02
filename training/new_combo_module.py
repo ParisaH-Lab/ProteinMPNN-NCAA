@@ -69,7 +69,7 @@ class NewComboChiral(nn.Module):
         new_combo = self.chiraldetermine(vanilla_out, dchiral_out)
         # print(f"new_combo shape before reduction: {new_combo.shape}")
     
-        return new_combo
+        return new_combo, vanilla_out, dchiral_out
 
 if __name__ == "__main__":
     # Example usage within the main block
