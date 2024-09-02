@@ -19,8 +19,9 @@ import copy
 import torch.nn as nn
 import torch.nn.functional as F
 from utils import worker_init_fn, get_pdbs, loader_pdb, build_training_clusters, PDB_dataset, StructureDataset, StructureLoader, chiral_loader, exec_init_worker
-from model_utils import featurize, get_std_opt
+from model_utils import featurize, get_std_opt, loss_nll, loss_smoothed
 from new_combo_module import NewComboChiral
+import torch.multiprocessing
 
 
 ########
@@ -119,11 +120,13 @@ def main(args):
 
     # optimizer = get_std_opt(model.chiraldetermine.parameters(), args.learning_rate, total_step)
     optimizer = torch.optim.Adam(model.chiraldetermine.parameters(), args.learning_rate, betas=(0.9, 0.999), eps=1e-08)
+    # optimizer = torch.optim.Adam(model.parameters(), args.learning_rate, betas=(0.9, 0.999), eps=1e-08)
     criterion = nn.BCELoss(reduction='none') # Initialize binary loss function classification
 
     if PATH:
         optimizer.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     
+    torch.multiprocessing.set_sharing_strategy('file_system')
     print("STARTING PROCESS POOL")
     print('----------------------')
     with ProcessPoolExecutor(max_workers=12, initializer=exec_init_worker, initargs=(chiral_dict,)) as executor:
@@ -150,6 +153,8 @@ def main(args):
             # Intialize metrics for training
             train_sum = 0.0
             train_acc = 0
+            train_aa_acc = 0
+            train_aa_weights = 0
             train_total_samples = 0 
             batch_train_steps = 0
 
@@ -164,18 +169,30 @@ def main(args):
                     q.put_nowait(executor.submit(get_pdbs, train_loader, 1, args.max_protein_length, args.num_examples_per_epoch))
                     p.put_nowait(executor.submit(get_pdbs, valid_loader, 1, args.max_protein_length, args.num_examples_per_epoch))
                 reload_c += 1
-            for batch in loader_train:
+            for lin, batch in enumerate(loader_train):
                 X, S, mask, lengths, chain_M, residue_idx, mask_self, chain_encoding_all = featurize(batch, device)
                 targets = torch.zeros_like(S, dtype=torch.float32, device=device)
-                mask_targets = torch.zeros_like(S, dtype=torch.int8, device=device)
+                # mask_targets = torch.zeros_like(S, dtype=torch.int8, device=device)
+                mask_for_loss = mask*chain_M
                 for n, n_tar in enumerate(batch):
                     chiral = n_tar["chiral"]
                     targets[n, :chiral.size(-1)] = chiral
-                    mask_targets[n, :chiral.size(-1)] = 1
+                    # mask_targets[n, :chiral.size(-1)] = 1
                 optimizer.zero_grad()
 
                 # Model forward pass 
-                output = model(X, S, mask, chain_M, residue_idx, chain_encoding_all) 
+                output, vanilla_out, dchiral_out  = model(X, S, mask, chain_M, residue_idx, chain_encoding_all) 
+
+                # select output
+                out_aa = torch.zeros_like(vanilla_out, device=vanilla_out.device)
+                out_aa = torch.where(
+                    output.round() == 1,
+                    vanilla_out,
+                    dchiral_out,
+                )
+
+                _, _, true_false_aa = loss_nll(S, out_aa, mask_for_loss)
+                _, loss_av_smoothed = loss_smoothed(S, out_aa, mask_for_loss)
 
                 # Initialize targets for l-chiral (class 1)
                 batch_size = output.size(0)
@@ -191,8 +208,9 @@ def main(args):
                 # un_norm_loss = criterion(output, targets) # Calculates the binary cross-entropy loss between model output and targets 
                 un_norm_loss = criterion(output.squeeze(-1), targets.float()) # Calculates the binary cross-entropy loss between model output and targets 
                 
-                loss = (un_norm_loss * mask_targets).sum() / mask_targets.sum()
-                loss.backward() # Computes the gradients of the loss
+                loss = (un_norm_loss * mask_for_loss).sum() / mask_for_loss.sum()
+                loss_full = loss + loss_av_smoothed
+                loss_full.backward() # Computes the gradients of the loss
                 optimizer.step() # Updates the model parameters based on the gradients
 
                 # Get binary class predictions
@@ -218,9 +236,11 @@ def main(args):
                 true_false = (predictions_binary == targets).float()
 
                 # Updating training metrics
-                train_sum += torch.sum(loss).cpu().data.numpy()
-                train_acc += torch.sum(true_false).cpu().data.numpy()
-                train_total_samples += mask_targets.sum().cpu().data.numpy()
+                train_sum += torch.sum(loss_full).cpu().data.numpy()
+                train_acc += torch.sum(true_false * mask_for_loss).cpu().data.numpy()
+                train_aa_acc += torch.sum(true_false_aa * mask_for_loss).cpu().data.numpy()
+                train_aa_weights += mask_for_loss.sum().cpu().data.numpy()
+                train_total_samples += mask_for_loss.sum().cpu().data.numpy()
                 batch_train_steps += 1
                 total_step += 1
 
@@ -230,22 +250,37 @@ def main(args):
                 # Intialize metrics for validation
                 validation_sum = 0.0
                 validation_acc = 0
+                validation_aa_acc = 0
+                valid_aa_weights = 0
                 validation_total_samples = 0 
-                batch_valid_steps = 0
+                batch_valid_steps = 1
 
                 for i, batch in enumerate(loader_valid):
                     X, S, mask, lengths, chain_M, residue_idx, mask_self, chain_encoding_all = featurize(batch, device)
+                    mask_for_loss = mask*chain_M
                     targets = torch.zeros_like(S, dtype=torch.float32, device=device)
-                    mask_targets = torch.zeros_like(S, dtype=torch.int8, device=device)
+                    # mask_targets = torch.zeros_like(S, dtype=torch.int8, device=device)
                     for n, n_tar in enumerate(batch):
                         chiral = n_tar["chiral"]
                         targets[n, :chiral.size(-1)] = chiral
-                        mask_targets[n, :chiral.size(-1)] = 1
+                        # mask_targets[n, :chiral.size(-1)] = 1
                     
                     # Model forward pass
-                    log_probs = model(X, S, mask, chain_M, residue_idx, chain_encoding_all)
+                    log_probs, vanilla_out, dchiral_out = model(X, S, mask, chain_M, residue_idx, chain_encoding_all)
 
-                    # Initialize targets for l-chiral (class 1)
+                    # select output
+                    out_aa = torch.zeros_like(vanilla_out, device=vanilla_out.device)
+                    out_aa = torch.where(
+                        log_probs.round() == 1,
+                        vanilla_out,
+                        dchiral_out,
+                    )
+
+                    # loss_aa, _, true_false_aa = loss_nll(S, out_aa, mask_for_loss)
+                    _, _, true_false_aa = loss_nll(S, out_aa, mask_for_loss)
+                    _, loss_av_smoothed = loss_smoothed(S, out_aa, mask_for_loss)
+
+                    # Initialize targets for l-chiral (class 2)
                     batch_size = log_probs.size(0)
                     sequence_length = log_probs.size(1)
 
@@ -257,7 +292,7 @@ def main(args):
 
                     # Compute loss
                     loss = criterion(log_probs.squeeze(-1), targets.float())
-                    norm_loss = (loss * mask_targets).sum() / mask_targets.sum()
+                    norm_loss = (loss * mask_for_loss).sum() / mask_for_loss.sum()
 
                     # Get binary class predictions
                     # predictions_binary = torch.argmax(log_probs, -1)
@@ -271,27 +306,33 @@ def main(args):
                     true_false = (predictions_binary  == targets).float()
 
                     # Update validation metrics
-                    validation_sum += torch.sum(norm_loss).cpu().data.numpy()
+                    validation_sum += torch.sum(norm_loss + loss_av_smoothed).cpu().data.numpy()
                     validation_acc += torch.sum(true_false).cpu().data.numpy()
+                    validation_aa_acc += torch.sum(true_false_aa * mask_for_loss).cpu().data.numpy()
+                    valid_aa_weights += mask_for_loss.sum().cpu().data.numpy()
                     # validation_total_samples += predictions_binary.numel()
-                    validation_total_samples += mask_targets.sum().cpu().data.numpy()
+                    validation_total_samples += mask_for_loss.sum().cpu().data.numpy()
                     batch_valid_steps += 1
             
             train_loss = train_sum / batch_train_steps
             train_accuracy = train_acc / train_total_samples
+            train_aa_accuracy = train_aa_acc / train_aa_weights
             validation_loss = validation_sum / batch_valid_steps
             validation_accuracy = validation_acc / validation_total_samples
+            validation_aa_accuracy = validation_aa_acc / valid_aa_weights
             
             train_loss_formatted = np.format_float_positional(np.float32(train_loss), unique=False, precision=6)
             train_accuracy_formatted = np.format_float_positional(np.float32(train_accuracy), unique=False, precision=6)
+            train_aa_accuracy_formatted = np.format_float_positional(np.float32(train_aa_accuracy), unique=False, precision=6)
             validation_loss_formatted = np.format_float_positional(np.float32(validation_loss), unique=False, precision=6)
             validation_accuracy_formatted = np.format_float_positional(np.float32(validation_accuracy), unique=False, precision=6)
+            validation_aa_accuracy_formatted = np.format_float_positional(np.float32(validation_aa_accuracy), unique=False, precision=6)
     
             t1 = time.time()
             dt = np.format_float_positional(np.float32(t1-t0), unique=False, precision=1) 
             with open(logfile, 'a') as f:
-                f.write(f'epoch: {e+1}, step: {total_step}, time: {dt}, train: {train_loss_formatted}, valid: {validation_loss_formatted}, train_acc: {train_accuracy_formatted}, valid_acc: {validation_accuracy_formatted}\n')
-            print(f'epoch: {e+1}, step: {total_step}, time: {dt}, train: {train_loss_formatted}, valid: {validation_loss_formatted}, train_acc: {train_accuracy_formatted}, valid_acc: {validation_accuracy_formatted}')
+                f.write(f'epoch: {e+1}, step: {total_step}, time: {dt}, train: {train_loss_formatted}, valid: {validation_loss_formatted}, train_acc: {train_accuracy_formatted}, valid_acc: {validation_accuracy_formatted}, train_aa_acc: {train_aa_accuracy_formatted}, valid_aa_acc: {validation_aa_accuracy_formatted}\n')
+            print(f'epoch: {e+1}, step: {total_step}, time: {dt}, train: {train_loss_formatted}, valid: {validation_loss_formatted}, train_acc: {train_accuracy_formatted}, valid_acc: {validation_accuracy_formatted}, train_aa_acc: {train_aa_accuracy_formatted}, valid_aa_acc: {validation_aa_accuracy_formatted}')
             
             checkpoint_filename_last = base_folder+'model_weights/epoch_last.pt'.format(e+1, total_step)
             torch.save({
