@@ -26,7 +26,6 @@ def featurize(batch, device):
     #     print("NUMBER: ", n, ", Batch: ", b, "\n")
         # print("SEQ: ", b["seq"], len(b["seq"]))
     lengths = [len(b["seq"]) for b in batch]
-    # print(lengths)
     if lengths == []:
         print('BATCH:', batch)
     alphabet = 'ACDEFGHIKLMNPQRSTVWYX'
