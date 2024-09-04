@@ -38,9 +38,9 @@ def update_sequences(input_dir, output_dir):
 
 # Specify the input and output directories
 regular_input_dir = '/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/pdb_2021aug02_sample/pdb/l3'
-regular_output_dir = '/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/labeled_pdb_2021aug02_sample/pdb'
-mirrored_input_dir = '/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/mirrored_pdb_2021aug02_sample/pdb'
-mirrored_output_dir = '/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/labeled_mirrored_pdb_2021aug02_sample/pdb'
+regular_output_dir = '/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/labeled_pdb_2021aug02_sample/pdb/l3'
+mirrored_input_dir = '/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/mirrored_pdb_2021aug02_sample/pdb/l3'
+mirrored_output_dir = '/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/labeled_mirrored_pdb_2021aug02_sample/pdb/l3'
 
 # Process L-chiral residue sequence
 update_sequences(regular_input_dir, regular_output_dir)
