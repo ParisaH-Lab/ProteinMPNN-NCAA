@@ -2,44 +2,57 @@
 
 import torch
 import numpy as np
-import time
 
-def get_pdbs(data_loader, repeat=1, max_length=10000, num_units=10):
-    pdb_dict_list = []
-    t0 = time.time()
+class MyDatasetClass:
+    def __init__(self, IDs, train_dict, loader, params):
+        self.IDs = IDs
+        self.train_dict = train_dict
+        self.loader = loader
+        self.params = params
 
-    for step, t in enumerate(data_loader):
-        print(f"Data at step {step}: {t}")  # Add this line to check the structure of t
+    def __getitem__(self, index):
+        ID = self.IDs[index]
+        sel_idx = np.random.randint(0, len(self.train_dict[ID]))
+        out = self.loader(self.train_dict[ID][sel_idx], self.params)
+        
+        # Debugging: Print the contents of 'out'
+        print(f"Index: {index}, ID: {ID}, Selected Index: {sel_idx}, Output: {out}")
 
-        for idx in range(repeat):
-            if not isinstance(t, dict):
-                print(f"Skipping idx {step} because t is not a dictionary.")
-                continue
+        # Check if 'out' is None or invalid
+        if out is None:
+            print(f"Warning: Loader returned None for index {index}, ID: {ID}")
+            return None
 
-            if 'masked' not in t or 'seq' not in t or 'xyz' not in t or 'mask' not in t or 'label' not in t:
-                print(f"Skipping idx {step} due to missing keys in t.")
-                continue
+        # If 'out' is empty or has other issues, print a warning
+        if not out:  # This checks if 'out' is an empty list, dict, or other iterable
+            print(f"Warning: Loader returned empty data for index {index}, ID: {ID}")
+            return None
 
-            res = torch.nonzero(t['masked'][0, :].cpu().numpy() == 0).view(-1)
-            print(f"idx: {step}, res shape: {res.shape}")
-            if len(res) < 200 or res.shape[0] < 1:
-                print(f"Skipping idx {step} due to insufficient length")
-                continue
+        return out
 
-            initial_sequence = "".join(map(str, t['seq'][0, res].tolist()))
-            if len(initial_sequence) > max_length:
-                print(f"Skipping idx {step} due to sequence length {len(initial_sequence)}")
-                continue
+# Example loader function
+def example_loader(data, params):
+    # Simulates loading and processing the data
+    return {"data": data, "params": params}
 
-            pdb_dict_list.append({
-                'seq': initial_sequence,
-                'xyz': t['xyz'][0, res, :].cpu().numpy(),
-                'mask': t['mask'][0, res].cpu().numpy(),
-                'label': t['label'][0, res].cpu().numpy()
-            })
+if __name__ == "__main__":
+    # Example data to initialize the dataset
+    IDs = ["id1", "id2", "id3"]
+    train_dict = {
+        "id1": [np.array([1, 2, 3])],
+        "id2": [np.array([4, 5, 6])],
+        "id3": [np.array([7, 8, 9])]
+    }
+    params = {"param1": 0.1, "param2": 0.2}
 
-            if len(pdb_dict_list) >= num_units:
-                break
+    # Create the dataset instance
+    dataset = MyDatasetClass(IDs, train_dict, example_loader, params)
 
-    print(f"Generated pdb_dict_list with length: {len(pdb_dict_list)}")
-    return pdb_dict_list
+    # Test the __getitem__ method for a specific index
+    print("Testing __getitem__ for index 0:")
+    output = dataset.__getitem__(0)
+    print(f"Output for index 0: {output}")
+
+    print("Testing __getitem__ for index 1:")
+    output = dataset.__getitem__(1)
+    print(f"Output for index 1: {output}")
