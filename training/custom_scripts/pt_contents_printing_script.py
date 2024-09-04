@@ -12,6 +12,9 @@ data = torch.load(file_path)
 print("Keys in the .pt file:")
 print(data.keys())
 
+# Check for potential element-related data
+element_keys = ['element', 'elements', 'atom_types', 'atom_names', 'atom_symbols']
+
 # Print the contents under each key
 for key, value in data.items():
     print(f"\nKey: {key}")
