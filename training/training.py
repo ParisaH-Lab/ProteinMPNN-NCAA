@@ -209,7 +209,8 @@ def main(args):
                 un_norm_loss = criterion(output.squeeze(-1), targets.float()) # Calculates the binary cross-entropy loss between model output and targets 
                 
                 loss = (un_norm_loss * mask_for_loss).sum() / mask_for_loss.sum()
-                loss_full = loss + loss_av_smoothed
+                # loss_full = loss + loss_av_smoothed
+                loss_full = loss
                 loss_full.backward() # Computes the gradients of the loss
                 optimizer.step() # Updates the model parameters based on the gradients
 
@@ -278,6 +279,10 @@ def main(args):
 
                     # loss_aa, _, true_false_aa = loss_nll(S, out_aa, mask_for_loss)
                     _, _, true_false_aa = loss_nll(S, out_aa, mask_for_loss)
+                    # print("S TOKEN 0:", S[0])
+                    # print("TARGETS 0:", torch.argmax(out_aa[0], -1))
+                    # print("S == TARGET zero:", (S == torch.argmax(out_aa[0], -1) * mask_for_loss[0]).sum())
+
                     _, loss_av_smoothed = loss_smoothed(S, out_aa, mask_for_loss)
 
                     # Initialize targets for l-chiral (class 2)
@@ -306,8 +311,9 @@ def main(args):
                     true_false = (predictions_binary  == targets).float()
 
                     # Update validation metrics
-                    validation_sum += torch.sum(norm_loss + loss_av_smoothed).cpu().data.numpy()
-                    validation_acc += torch.sum(true_false).cpu().data.numpy()
+                    # validation_sum += torch.sum(norm_loss + loss_av_smoothed).cpu().data.numpy()
+                    validation_sum += torch.sum(norm_loss).cpu().data.numpy()
+                    validation_acc += torch.sum(true_false * mask_for_loss).cpu().data.numpy()
                     validation_aa_acc += torch.sum(true_false_aa * mask_for_loss).cpu().data.numpy()
                     valid_aa_weights += mask_for_loss.sum().cpu().data.numpy()
                     # validation_total_samples += predictions_binary.numel()
