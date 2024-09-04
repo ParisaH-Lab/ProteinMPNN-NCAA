@@ -135,7 +135,7 @@ def main(args):
         epoch = 0
 
     optimizer = get_std_opt(model.chiraldetermine.parameters(), args.hidden_dim, total_step)
-    criterion = nn.BCELoss() # Initialize binary loss function classification
+    criterion = nn.BCELoss(reduction='sum') # Initialize binary loss function classification
 
     if PATH:
         optimizer.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
