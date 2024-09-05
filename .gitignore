@@ -1,8 +1,8 @@
 training/datasets/
 training/mirrored_*
 training/vanilla_*
-training/*.csv
-training/*.txt
+training/outputs/*.csv
+training/outputs/*.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
