@@ -85,10 +85,6 @@ def main(args):
     print(f"Number of training batches: {len(train_loader)}")
     print(f"Number of validation batches: {len(valid_loader)}")
 
-    if len(train_loader) == 0:
-        print("Error: The train_loader is empty.")
-        return
-
     model = NewComboChiral(edge_features=args.hidden_dim, 
                            hidden_dim=args.hidden_dim, 
                            num_encoder_layers=args.num_encoder_layers, 
@@ -180,8 +176,6 @@ def main(args):
                 
             for lin, batch in enumerate(loader_train):
                 X, S, mask, lengths, chain_M, residue_idx, mask_self, chain_encoding_all = featurize(batch, device)
-                print(f"Features X shape: {X.shape}")
-                print(f"Sequence S shape: {S.shape}")
                 
                 targets = torch.zeros_like(S, dtype=torch.float32, device=device)
                 # mask_targets = torch.zeros_like(S, dtype=torch.int8, device=device)
