@@ -7,7 +7,6 @@ import numpy as np
 import time
 import random
 import os
-import re
 
 class StructureDataset():
     def __init__(self, pdb_dict_list, verbose=True, truncate=None, max_length=100,
@@ -457,46 +456,44 @@ def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_data
     #     return {'seq': ''}
 
 def build_training_clusters(params, debug):
-    # Define a helper function for safely converting to integers
-    def safe_int_conversion(value):
-        # Extract numbers from a string and handle prefixes
-        match = re.search(r'\d+', value)
-        return int(match.group(0)) if match else None
-
-    # Load validation and test identifiers
-    with open(params['VAL'], 'r') as file:
-        val_ids = set(safe_int_conversion(line.strip()) for line in file if safe_int_conversion(line.strip()) is not None)
-
-    with open(params['TEST'], 'r') as file:
-        test_ids = set(safe_int_conversion(line.strip()) for line in file if safe_int_conversion(line.strip()) is not None)
-
+    val_ids = set([int(l) for l in open(params['VAL']).readlines()])
+    test_ids = set([int(l) for l in open(params['TEST']).readlines()])
+   
     if debug:
-        val_ids = set()
-        test_ids = set()
-
-    # Read and process the data from the correct file
-    with open(params['CHIRAL'], 'r') as f:
+        val_ids = []
+        test_ids = []
+ 
+    # read & clean list.csv
+    with open(params['LIST'], 'r') as f:
         reader = csv.reader(f)
-        next(reader)  # Skip header if present
-        rows = []
-        for r in reader:
-            if float(r[2]) <= params['RESCUT'] and parser.parse(r[1]) <= parser.parse(params['DATCUT']):
-                cluster_id = safe_int_conversion(r[4])  # Safely convert potential prefixed numeric field
-                if cluster_id:
-                    rows.append([r[0], r[3], cluster_id])
-
-    # Compile training, validation, and test sets
-    train, valid, test = {}, {}, {}
-    for r in rows:
-        cluster_id = r[2]
-        if cluster_id in val_ids:
-            valid.setdefault(cluster_id, []).append(r[:2])
-        elif cluster_id in test_ids:
-            test.setdefault(cluster_id, []).append(r[:2])
-        else:
-            train.setdefault(cluster_id, []).append(r[:2])
+        next(reader)
+        rows = [[r[0],r[3],int(r[4])] for r in reader
+                if float(r[2])<=params['RESCUT'] and
+                parser.parse(r[1])<=parser.parse(params['DATCUT'])]
+    
+    # compile training and validation sets
+    train = {}
+    valid = {}
+    test = {}
 
     if debug:
-        valid = train
-
+        rows = rows[:20]
+    for r in rows:
+        if r[2] in val_ids:
+            if r[2] in valid.keys():
+                valid[r[2]].append(r[:2])
+            else:
+                valid[r[2]] = [r[:2]]
+        elif r[2] in test_ids:
+            if r[2] in test.keys():
+                test[r[2]].append(r[:2])
+            else:
+                test[r[2]] = [r[:2]]
+        else:
+            if r[2] in train.keys():
+                train[r[2]].append(r[:2])
+            else:
+                train[r[2]] = [r[:2]]
+    if debug:
+        valid=train       
     return train, valid, test
