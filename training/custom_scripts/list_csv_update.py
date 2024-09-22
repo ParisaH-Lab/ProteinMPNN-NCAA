@@ -34,8 +34,8 @@ def update_list_csv(input_file, output_file):
 
 
 # Specify the paths to the input and output CSV files
-input_csv = '/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/combined_labeled_pdb_2021aug02_sample/list.csv'
-output_csv = '/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/combined_labeled_pdb_2021aug02_sample/list_mirror.csv'
+input_csv = '/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/combined_labeled_pdb_2021aug02_sample2/list.csv'
+output_csv = '/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/combined_labeled_pdb_2021aug02_sample2/list_mirror.csv'
 
 # Call the function to update the CSV
 update_list_csv(input_csv, output_csv)
