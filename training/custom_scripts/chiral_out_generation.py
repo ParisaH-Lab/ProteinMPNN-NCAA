@@ -15,9 +15,9 @@ def generate_chiral_csv(original_csv, mirrored_csv, output_csv):
     print("Combined chiral data CSV generated:", output_csv)
 
 # Specify file paths
-original_csv = '/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/combined_labeled_pdb_2021aug02_sample/list.csv'
-mirrored_csv = '/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/combined_labeled_pdb_2021aug02_sample/list_mirror.csv'
-output_csv = '/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/combined_labeled_pdb_2021aug02_sample/chiral_out.csv'
+original_csv = '/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/combined_labeled_pdb_2021aug02_sample2/list.csv'
+mirrored_csv = '/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/combined_labeled_pdb_2021aug02_sample2/list_mirror.csv'
+output_csv = '/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/combined_labeled_pdb_2021aug02_sample2/chiral_out.csv'
 
 # Generate the chiral_out.csv
 generate_chiral_csv(original_csv, mirrored_csv, output_csv)
