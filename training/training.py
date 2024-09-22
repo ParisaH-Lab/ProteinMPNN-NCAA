@@ -50,7 +50,7 @@ def main(args):
 
     data_path = args.path_for_training_data
     params = {
-        "LIST"    : f"{data_path}/list.csv", 
+        "LIST"    : f"{data_path}/chiral_out.csv", 
         "VAL"     : f"{data_path}/valid_clusters.txt",
         "TEST"    : f"{data_path}/test_clusters.txt",
         "DIR"     : f"{data_path}",
@@ -73,17 +73,15 @@ def main(args):
     chiral_dict = chiral_loader(params)
 
     train, valid, test = build_training_clusters(params, args.debug)
-    
+
     train_set = PDB_dataset(list(train.keys()), loader_pdb, train, params)
     train_loader = torch.utils.data.DataLoader(train_set, worker_init_fn=worker_init_fn, **LOAD_PARAM)
     valid_set = PDB_dataset(list(valid.keys()), loader_pdb, valid, params)
     valid_loader = torch.utils.data.DataLoader(valid_set, worker_init_fn=worker_init_fn, **LOAD_PARAM)
-
-    print(f"Training Set Size: {len(train_set)}")
-    print(f"Validation Set Size: {len(valid_set)}")
-
-    print(f"Number of training batches: {len(train_loader)}")
-    print(f"Number of validation batches: {len(valid_loader)}")
+    
+    print(f"Batch size: {args.batch_size}")
+    print(f"Total training examples: {len(train_set)}")
+    print(f"Total validation examples: {len(valid_set)}")
 
     model = NewComboChiral(edge_features=args.hidden_dim, 
                            hidden_dim=args.hidden_dim, 
@@ -133,6 +131,8 @@ def main(args):
         optimizer.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     
     torch.multiprocessing.set_sharing_strategy('file_system')
+    print("STARTING PROCESS POOL")
+    print('----------------------')
     with ProcessPoolExecutor(max_workers=12, initializer=exec_init_worker, initargs=(chiral_dict,)) as executor:
         q = queue.Queue(maxsize=3)
         p = queue.Queue(maxsize=3)
@@ -173,10 +173,9 @@ def main(args):
                     q.put_nowait(executor.submit(get_pdbs, train_loader, 1, args.max_protein_length, args.num_examples_per_epoch))
                     p.put_nowait(executor.submit(get_pdbs, valid_loader, 1, args.max_protein_length, args.num_examples_per_epoch))
                 reload_c += 1
-                
             for lin, batch in enumerate(loader_train):
+                print(f"Batch {lin}: Size {len(batch)}")  # Check if batches are empty
                 X, S, mask, lengths, chain_M, residue_idx, mask_self, chain_encoding_all = featurize(batch, device)
-                
                 targets = torch.zeros_like(S, dtype=torch.float32, device=device)
                 # mask_targets = torch.zeros_like(S, dtype=torch.int8, device=device)
                 mask_for_loss = mask*chain_M
@@ -326,8 +325,6 @@ def main(args):
                     validation_total_samples += mask_for_loss.sum().cpu().data.numpy()
                     batch_valid_steps += 1
             
-            if batch_train_steps == 0:
-                print("Warning: No batches processed in training loop.")
             train_loss = train_sum / batch_train_steps
             train_accuracy = train_acc / train_total_samples
             train_aa_accuracy = train_aa_acc / train_aa_weights
@@ -378,7 +375,7 @@ def main(args):
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    argparser.add_argument("--path_for_training_data", type=str, default="/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/combined_labeled_pdb_2021aug02_sample", help="path for loading training data") 
+    argparser.add_argument("--path_for_training_data", type=str, default="/projects/parisahlab/lmjone/internship/ProteinMPNN-PH/training/datasets/combined_labeled_pdb_2021aug02_sample2", help="path for loading training data") 
     argparser.add_argument("--path_for_outputs", type=str, default="./exp_020", help="path for logs and model weights")
     argparser.add_argument("--previous_checkpoint", type=str, default="", help="path for previous model weights, e.g. file.pt")
     argparser.add_argument("--num_epochs", type=int, default=200, help="number of epochs to train for")
