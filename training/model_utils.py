@@ -391,12 +391,10 @@ class ProteinFeatures(nn.Module):
         E = self.norm_edges(E)
         return E, E_idx
 
-
-
 class ProteinMPNN(nn.Module):
     def __init__(self, num_letters=21, node_features=128, edge_features=128,
-        hidden_dim=128, num_encoder_layers=3, num_decoder_layers=3,
-        vocab=21, k_neighbors=32, augment_eps=0.1, dropout=0.1):
+                 hidden_dim=128, num_encoder_layers=3, num_decoder_layers=3,
+                 vocab=21, k_neighbors=32, augment_eps=0.1, dropout=0.1):
         super(ProteinMPNN, self).__init__()
 
         # Hyperparameters
@@ -411,13 +409,13 @@ class ProteinMPNN(nn.Module):
 
         # Encoder layers
         self.encoder_layers = nn.ModuleList([
-            EncLayer(hidden_dim, hidden_dim*2, dropout=dropout)
+            EncLayer(hidden_dim, hidden_dim * 2, dropout=dropout)
             for _ in range(num_encoder_layers)
         ])
 
         # Decoder layers
         self.decoder_layers = nn.ModuleList([
-            DecLayer(hidden_dim, hidden_dim*3, dropout=dropout)
+            DecLayer(hidden_dim, hidden_dim * 3, dropout=dropout)
             for _ in range(num_decoder_layers)
         ])
         self.W_out = nn.Linear(hidden_dim, num_letters, bias=True)
@@ -428,14 +426,14 @@ class ProteinMPNN(nn.Module):
 
     def forward(self, X, S, mask, chain_M, residue_idx, chain_encoding_all):
         """ Graph-conditioned sequence model """
-        device=X.device
+        device = X.device
         # Prepare node and edge embeddings
         E, E_idx = self.features(X, mask, residue_idx, chain_encoding_all)
         h_V = torch.zeros((E.shape[0], E.shape[1], E.shape[-1]), device=E.device)
         h_E = self.W_e(E)
 
         # Encoder is unmasked self-attention
-        mask_attend = gather_nodes(mask.unsqueeze(-1),  E_idx).squeeze(-1)
+        mask_attend = gather_nodes(mask.unsqueeze(-1), E_idx).squeeze(-1)
         mask_attend = mask.unsqueeze(-1) * mask_attend
         for layer in self.encoder_layers:
             h_V, h_E = torch.utils.checkpoint.checkpoint(layer, h_V, h_E, E_idx, mask, mask_attend)
@@ -448,12 +446,14 @@ class ProteinMPNN(nn.Module):
         h_EX_encoder = cat_neighbors_nodes(torch.zeros_like(h_S), h_E, E_idx)
         h_EXV_encoder = cat_neighbors_nodes(h_V, h_EX_encoder, E_idx)
 
-
-        chain_M = chain_M*mask #update chain_M to include missing regions
-        decoding_order = torch.argsort((chain_M+0.0001)*(torch.abs(torch.randn(chain_M.shape, device=device)))) #[numbers will be smaller for places where chain_M = 0.0 and higher for places where chain_M = 1.0]
+        chain_M = chain_M * mask  # update chain_M to include missing regions
+        decoding_order = torch.argsort(
+            (chain_M + 0.0001) * (torch.abs(torch.randn(chain_M.shape, device=device))))  # [numbers will be smaller for places where chain_M = 0.0 and higher for places where chain_M = 1.0]
         mask_size = E_idx.shape[1]
         permutation_matrix_reverse = torch.nn.functional.one_hot(decoding_order, num_classes=mask_size).float()
-        order_mask_backward = torch.einsum('ij, biq, bjp->bqp',(1-torch.triu(torch.ones(mask_size,mask_size, device=device))), permutation_matrix_reverse, permutation_matrix_reverse)
+        order_mask_backward = torch.einsum('ij, biq, bjp->bqp',
+                                           (1 - torch.triu(torch.ones(mask_size, mask_size, device=device))),
+                                           permutation_matrix_reverse, permutation_matrix_reverse)
         mask_attend = torch.gather(order_mask_backward, 2, E_idx).unsqueeze(-1)
         mask_1D = mask.view([mask.size(0), mask.size(1), 1, 1])
         mask_bw = mask_1D * mask_attend

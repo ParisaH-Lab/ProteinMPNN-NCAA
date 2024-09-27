@@ -1,3 +1,12 @@
+training/datasets/
+training/mirrored_*
+training/vanilla_*
+<<<<<<< HEAD
+training/outputs/*.csv
+training/outputs/*.txt
+=======
+>>>>>>> ba59aa60a3c3a9d39638ea7b0cca6099a21dcd55
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
