@@ -22,7 +22,7 @@ class StructureDataset():
 
         start = time.time()
         for i, entry in enumerate(pdb_dict_list):
-            seq = entry['seq'].upper()
+            seq = entry['seq'] # get rid of .upper() for new arch testing
             name = entry['name']
 
             bad_chars = set([s for s in seq]).difference(alphabet_set)
@@ -376,7 +376,7 @@ def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_data
         chain = torch.load("%s_%s.pt"%(PREFIX,chid))
         L = len(chain['seq'])
         # assert(L == chiral_dict[chain_total_name].size(0))
-        return {'seq'    : chain['seq'].upper(),
+        return {'seq'    : chain['seq'], # got rid of .upper() for new arch testing
                 'xyz'    : chain['xyz'],
                 'idx'    : torch.zeros(L).int(),
                 'masked' : torch.Tensor([0]).int(),
@@ -433,8 +433,8 @@ def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_data
     for counter,(k,v) in enumerate(asmb.items()):
         # seq += chains[k[0]]['seq']
         # seq_list.append(chains[k[0]]['seq'])
-        seq += chains[k[0]]['seq'].upper()
-        seq_list.append(chains[k[0]]['seq'].upper())
+        seq += chains[k[0]]['seq'] # got rid of .upper() for new arch testing
+        seq_list.append(chains[k[0]]['seq']) # got rid of .upper() for new arch testing
         xyz.append(v)
         chiral_full += chiral_chain_dict[k[0]]
         idx.append(torch.full((v.shape[0],),counter))

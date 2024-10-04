@@ -29,6 +29,7 @@ def featurize(batch, device):
     if lengths == []:
         print('BATCH:', batch)
     alphabet = 'ACDEFGHIKLMNPQRSTVWYX'
+    alphabet = alphabet + alphabet.lower() # Create mirror of this D-chiral
     B = len(batch)
     lengths = np.array([len(b['seq']) for b in batch], dtype=np.int32) #sum of chain seq lengths
     L_max = max([len(b['seq']) for b in batch])
@@ -403,9 +404,9 @@ class ProteinFeatures(nn.Module):
         return E, E_idx
 
 class ProteinMPNN(nn.Module):
-    def __init__(self, num_letters=21, node_features=128, edge_features=128,
+    def __init__(self, num_letters=21*2, node_features=128, edge_features=128,
                  hidden_dim=128, num_encoder_layers=3, num_decoder_layers=3,
-                 vocab=21, k_neighbors=32, augment_eps=0.1, dropout=0.1):
+                 vocab=21*2, k_neighbors=32, augment_eps=0.1, dropout=0.1):
         super(ProteinMPNN, self).__init__()
 
         # Hyperparameters
