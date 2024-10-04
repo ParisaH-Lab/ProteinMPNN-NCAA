@@ -17,14 +17,6 @@ import itertools
 
 
 def featurize(batch, device):
-    # print("-----------------------")
-    # print("-----------------------")
-    # print("NEW ONE")
-    # print("-----------------------")
-    # print("-----------------------")
-    # for n, b in enumerate(batch):
-    #     print("NUMBER: ", n, ", Batch: ", b, "\n")
-        # print("SEQ: ", b["seq"], len(b["seq"]))
     alphabet = 'ACDEFGHIKLMNPQRSTVWYX'
     alphabet = alphabet + alphabet.lower() # Create mirror of this D-chiral
     B = len(batch)
@@ -116,7 +108,6 @@ def featurize(batch, device):
         chain_encoding_all[i,:] = chain_encoding_pad
 
         # Convert to labels
-        print([alphabet.index(a) for a in all_sequence])
         indices = np.asarray([alphabet.index(a) for a in all_sequence], dtype=np.int32)
         S[i, :l] = indices
 
@@ -149,7 +140,7 @@ def loss_nll(S, log_probs, mask):
 
 def loss_smoothed(S, log_probs, mask, weight=0.1):
     """ Negative log probabilities """
-    S_onehot = torch.nn.functional.one_hot(S, 21).float()
+    S_onehot = torch.nn.functional.one_hot(S, 21*2).float()
 
     # Label smoothing
     S_onehot = S_onehot + weight / float(S_onehot.size(-1))

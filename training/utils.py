@@ -350,8 +350,8 @@ def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_data
     elif 'mirror' in pdbid:
         PREFIX = os.path.join(params["DIR"], pdbid[1:3]+"mirror", pdbid) # This is pretending first two then mirror (eg. l3mirror)
     else:
-        # PREFIX = os.path.join(params["DIR"], "pt_loops", "pdb", "homochiral", pdbid[1:3], pdbid)
-        PREFIX = "%s/pdb/%s/%s"%(params['DIR'],pdbid[1:3],pdbid)
+        PREFIX = os.path.join(params["DIR"], "pt_loops", "pdb", "homochiral", pdbid[1:3], pdbid)
+        # PREFIX = "%s/pdb/%s/%s"%(params['DIR'],pdbid[1:3],pdbid)
     # assert "/".join(PREFIX.split('/')[:-1]) == os.path.join(params['DIR'],"pt_loops", "pdb", "heterochiral", pdbid[1:3]), f"The Path is Different Then: {os.path.join(params['DIR'],'pt_loops', 'pdb', 'heterochiral', pdbid[1:3])}"
     
     # load metadata
@@ -360,7 +360,7 @@ def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_data
         return {'seq': np.zeros(5)}
         # return {'seq': ''}
         # pass
-    meta = torch.load(PREFIX+".pt")
+    meta = torch.load(PREFIX+".pt", weights_only=True)
     asmb_ids = meta['asmb_ids']
     asmb_chains = meta['asmb_chains']
     chids = np.array(meta['chains'])
@@ -373,7 +373,7 @@ def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_data
     # then return this chain alone
     if len(asmb_candidates)<1:
         chain_total_name = f"{pdbid}_{chid}"
-        chain = torch.load("%s_%s.pt"%(PREFIX,chid))
+        chain = torch.load("%s_%s.pt"%(PREFIX,chid), weights_only=True)
         L = len(chain['seq'])
         # assert(L == chiral_dict[chain_total_name].size(0))
         return {'seq'    : chain['seq'], # got rid of .upper() for new arch testing
@@ -391,7 +391,7 @@ def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_data
     idx = np.where(np.array(asmb_ids)==asmb_i)[0]
 
     # load relevant chains
-    chains = {c:torch.load("%s_%s.pt"%(PREFIX,c))
+    chains = {c:torch.load("%s_%s.pt"%(PREFIX,c), weights_only=True)
               for i in idx for c in asmb_chains[i]
               if c in meta['chains']}
 
@@ -418,7 +418,7 @@ def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_data
                 asmb.update({(c,k,i):xyz_i for i,xyz_i in enumerate(xyz_ru)})
                 chiral_chain_dict.update({c:chiral_dict[f"{pdbid}_{c}"]})
             except KeyError:
-                print("KEY ERROR FILE:", item[0])
+                # print("KEY ERROR FILE:", item[0])
                 return {'seq': np.zeros(5)}
                 # return {'seq': ''}
                 # pass
