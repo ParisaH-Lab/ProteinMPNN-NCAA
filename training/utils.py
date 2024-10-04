@@ -350,8 +350,8 @@ def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_data
     elif 'mirror' in pdbid:
         PREFIX = os.path.join(params["DIR"], pdbid[1:3]+"mirror", pdbid) # This is pretending first two then mirror (eg. l3mirror)
     else:
-        PREFIX = os.path.join(params["DIR"], "pt_loops", "pdb", "homochiral", pdbid[1:3], pdbid)
-        # PREFIX = "%s/pdb/%s/%s"%(params['DIR'],pdbid[1:3],pdbid)
+        # PREFIX = os.path.join(params["DIR"], "pt_loops", "pdb", "homochiral", pdbid[1:3], pdbid)
+        PREFIX = "%s/pdb/%s/%s"%(params['DIR'],pdbid[1:3],pdbid)
     # assert "/".join(PREFIX.split('/')[:-1]) == os.path.join(params['DIR'],"pt_loops", "pdb", "heterochiral", pdbid[1:3]), f"The Path is Different Then: {os.path.join(params['DIR'],'pt_loops', 'pdb', 'heterochiral', pdbid[1:3])}"
     
     # load metadata

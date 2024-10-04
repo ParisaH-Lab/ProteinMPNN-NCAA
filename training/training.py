@@ -90,8 +90,8 @@ def main(args):
                            out1=1)      
     model.to(device)
 
-    vanilla_train_weights = torch.load("/mnt/c/Users/thefr/Downloads/epoch200_step564.pt", map_location=device)
-    dchiral_train_weights = torch.load("/mnt/c/Users/thefr/Downloads/epoch200_step606.pt", map_location=device)
+    vanilla_train_weights = torch.load("/mnt/c/Users/thefr/Downloads/epoch200_step298108.pt", map_location=device)
+    dchiral_train_weights = torch.load("/mnt/c/Users/thefr/Downloads/epoch200_step298474.pt", map_location=device)
 
     # Extract model state dictionaries
     vanilla_model_state_dict = vanilla_train_weights['model_state_dict']
@@ -125,6 +125,16 @@ def main(args):
 
     if PATH:
         optimizer.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+    # Generate a conversion token
+    alphabet = 'ACDEFGHIKLMNPQRSTVWYX'
+    token2aa = dict(
+        zip(
+            list(torch.arange(len(alphabet))),
+            list(alphabet)
+        )
+    )
+    print("TOKEN 2 AA", token2aa)
     
     torch.multiprocessing.set_sharing_strategy('file_system')
     print("STARTING PROCESS POOL")

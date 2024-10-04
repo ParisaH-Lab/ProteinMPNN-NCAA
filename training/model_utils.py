@@ -25,14 +25,11 @@ def featurize(batch, device):
     # for n, b in enumerate(batch):
     #     print("NUMBER: ", n, ", Batch: ", b, "\n")
         # print("SEQ: ", b["seq"], len(b["seq"]))
-    lengths = [len(b["seq"]) for b in batch]
-    if lengths == []:
-        print('BATCH:', batch)
     alphabet = 'ACDEFGHIKLMNPQRSTVWYX'
     alphabet = alphabet + alphabet.lower() # Create mirror of this D-chiral
     B = len(batch)
     lengths = np.array([len(b['seq']) for b in batch], dtype=np.int32) #sum of chain seq lengths
-    L_max = max([len(b['seq']) for b in batch])
+    L_max = np.max(lengths) #max([len(b['seq']) for b in batch])
     X = np.zeros([B, L_max, 4, 3])
     residue_idx = -100*np.ones([B, L_max], dtype=np.int32) #residue idx with jumps across chains
     chain_M = np.zeros([B, L_max], dtype=np.int32) #1.0 for the bits that need to be predicted, 0.0 for the bits that are given
@@ -119,6 +116,7 @@ def featurize(batch, device):
         chain_encoding_all[i,:] = chain_encoding_pad
 
         # Convert to labels
+        print([alphabet.index(a) for a in all_sequence])
         indices = np.asarray([alphabet.index(a) for a in all_sequence], dtype=np.int32)
         S[i, :l] = indices
 
