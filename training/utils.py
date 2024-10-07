@@ -344,7 +344,14 @@ def loader_pdb(item,params):#, chiral_info: torch.Tensor): # This means PDB_data
     each residue
     """
 
-    pdbid,chid = item[0].split('_')
+    try:
+        pdbid,chid = item[0].split('_')
+    except:
+        print("--- Except ---")
+        print(item[0].split('_'))
+        print(item[0])
+        print("---------------")
+        
     if 'heterochiral' in pdbid:
         PREFIX = os.path.join(params["DIR"], "pt_loops", "pdb", "heterochiral", pdbid)
     elif 'mirror' in pdbid:
